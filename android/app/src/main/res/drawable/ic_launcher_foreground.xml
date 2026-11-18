@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- O column (circles) then a rising X column -->
+    <path android:strokeColor="#FAF8F3" android:strokeWidth="3.2" android:fillColor="#00000000"
+        android:pathData="M34,44 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 M34,56 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 M34,68 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
+    <path android:strokeColor="#FAF8F3" android:strokeWidth="3.6" android:strokeLineCap="round"
+        android:pathData="M47,59 l10,10 M57,59 l-10,10 M47,47 l10,10 M57,47 l-10,10 M47,35 l10,10 M57,35 l-10,10" />
+    <path android:strokeColor="#F2C14E" android:strokeWidth="3.6" android:strokeLineCap="round"
+        android:pathData="M64,33 l10,10 M74,33 l-10,10" />
+    <path android:strokeColor="#FAF8F3" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M28,78 L80,78" />
+</vector>
