@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Why? Formats</title>
+<style>
+:root {
+  --bg: #F5F6F8; --surface: #FFFFFF; --raised: #F0F2F5; --border: #E2E5EA; --grid: #ECEEF2;
+  --ink: #18202A; --muted: #5D6675; --accent: #3B5BDB; --accent-soft: #E7ECFF;
+  --up: #077560; --up-soft: #E3F4EF; --down: #C2410C; --down-soft: #FBEAE2; --warn: #9A6700; --warn-soft: #FFF4D6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F1216; --surface: #171B21; --raised: #1F242C; --border: #2A3039; --grid: #222831;
+    --ink: #E8EAEE; --muted: #9AA3B2; --accent: #8DA2FB; --accent-soft: #232B45;
+    --up: #1FA08A; --up-soft: #15302B; --down: #E0663A; --down-soft: #35211A; --warn: #E3B341; --warn-soft: #33290F;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F1216; --surface: #171B21; --raised: #1F242C; --border: #2A3039; --grid: #222831;
+  --ink: #E8EAEE; --muted: #9AA3B2; --accent: #8DA2FB; --accent-soft: #232B45;
+  --up: #1FA08A; --up-soft: #15302B; --down: #E0663A; --down-soft: #35211A; --warn: #E3B341; --warn-soft: #33290F;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { padding: 20px 16px 4px; max-width: 1180px; margin: 0 auto; }
+h1 { font-size: 1.35rem; margin: 0 0 4px; }
+header p { margin: 0; color: var(--muted); font-size: .9rem; }
+.row-title { max-width: 1180px; margin: 22px auto 8px; padding: 0 16px; font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; max-width: 1180px; margin: 0 auto; padding: 0 16px; }
+.opt { display: flex; flex-direction: column; gap: 8px; }
+.opt > .tag { font-weight: 700; font-size: .95rem; }
+.opt > .tag span { color: var(--muted); font-weight: 500; }
+.sheet { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.kick { color: var(--accent); font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.title { font-size: 1.15rem; font-weight: 750; line-height: 1.25; margin-top: -6px; }
+.h4 { font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 4px 0 -4px; }
+p { margin: 0; }
+.muted { color: var(--muted); } .up { color: var(--up); } .down { color: var(--down); } .warn { color: var(--warn); } .acc { color: var(--accent); }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .88em; }
+.small { font-size: .82rem; }
+/* A: research note */
+.strip { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; background: var(--raised); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; }
+.grade { font-size: 2.1rem; font-weight: 800; line-height: 1; color: var(--up); text-align: center; min-width: 2.4rem; }
+.grade.b { color: var(--accent); }
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px 10px; font-size: .78rem; }
+.kpis b { display: block; font-size: .92rem; }
+ol.why { margin: 0; padding-left: 1.1rem; display: grid; gap: 6px; }
+ol.why li::marker { color: var(--muted); font-weight: 700; }
+ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 5px; }
+.change { border-left: 3px solid var(--accent); padding: 4px 0 4px 10px; font-size: .9rem; }
+/* B: scorecard */
+table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+td, th { padding: 7px 4px; border-bottom: 1px solid var(--grid); vertical-align: top; text-align: left; }
+th { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; }
+td.mark { width: 1.4rem; font-weight: 800; }
+td.pillar { width: 6.2rem; font-weight: 650; }
+.verdict { display: flex; gap: 10px; align-items: center; border-radius: 14px; padding: 10px 12px; background: var(--up-soft); }
+.verdict.b { background: var(--accent-soft); }
+.verdict .grade { font-size: 1.8rem; }
+.plan { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.plan div { background: var(--raised); border-radius: 10px; padding: 6px 8px; font-size: .74rem; color: var(--muted); }
+.plan b { display: block; color: var(--ink); font-size: .9rem; }
+/* C: bull / bear / plan */
+.case { border-radius: 14px; padding: 10px 12px; display: grid; gap: 4px; }
+.case.bull { background: var(--up-soft); } .case.bear { background: var(--down-soft); } .case.plan2 { background: var(--raised); }
+.case .lab { font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .78rem; font-weight: 700; background: var(--up-soft); color: var(--up); }
+.pill.b { background: var(--accent-soft); color: var(--accent); }
+.foot { font-size: .74rem; color: var(--muted); }
+.pick { max-width: 1180px; margin: 26px auto 32px; padding: 14px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Why? write-up formats</h1>
+  <p>Three formats for the hold-to-open sheet, using the 17 Nov report's real numbers. Top row: a breakout setup (MEGHNAPET). Second row: a weaker setup (MIDLANDBNK). Third row: a market card (Trend · DSEX).</p>
+</header>
+
+<div class="row-title">1 · Breakout setup: MEGHNAPET (Grade A)</div>
+<div class="grid">
+
+  <!-- A -->
+  <div class="opt">
+    <div class="tag">A · Research note <span>rating strip, thesis, numbered evidence</span></div>
+    <div class="sheet">
+      <div class="kick">Watch · 1 of 4</div>
+      <div class="title">MEGHNAPET: Triple Top buy one box away</div>
+      <div class="strip">
+        <div class="grade">A</div>
+        <div class="kpis">
+          <div>Confidence<b>Medium</b></div><div>Target<b class="up">98.0</b></div><div>Upside<b class="up">+30.3%</b></div>
+          <div>Entry<b class="acc">76.0</b></div><div>Stop<b class="down">64.0</b></div><div>Reward/risk<b>1.8 : 1</b></div>
+        </div>
+      </div>
+      <div class="h4">Thesis</div>
+      <p>A close at 76.0 completes a Triple Top buy with trend, momentum, money and the sector behind it. We would buy the print, not the anticipation, and aim first at 80.0 where the last rally stalled.</p>
+      <div class="h4">Why?</div>
+      <ol class="why">
+        <li><b>Pattern.</b> Third test of 75.0; one more box (76.0, +1.1%) breaks it.</li>
+        <li><b>Trend.</b> Above EMA50 (72.1) and EMA200 (61.5): the breakout runs with the long trend.</li>
+        <li><b>Momentum.</b> MACD above its signal line.</li>
+        <li><b>Money flow.</b> MFI 76, up from 67 five sessions ago.</li>
+        <li><b>Volume.</b> 5.3× its average today: buyers are already showing up.</li>
+        <li><b>Sector.</b> Food &amp; Allied bullish % in a rising column.</li>
+      </ol>
+      <div class="h4">Risks</div>
+      <ul>
+        <li>A failed breakout: P&amp;F buys often retest the old top (75.0) first.</li>
+        <li>The 98.0 objective is a count that applies only once the buy prints.</li>
+      </ul>
+      <div class="h4">What would change our view</div>
+      <div class="change">A close below 72.1 (EMA50) before the trigger, or 64.0 (P&amp;F sell) after it.</div>
+      <div class="foot">Rules-based rating from the chart's numbers. Not investment advice.</div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="opt">
+    <div class="tag">B · Scorecard <span>one row per pillar, verdict and plan</span></div>
+    <div class="sheet">
+      <div class="kick">Watch · 1 of 4</div>
+      <div class="title">MEGHNAPET: Triple Top buy one box away</div>
+      <div class="verdict"><div class="grade">A</div><div><b>Buy on a close at 76.0</b><div class="small muted">Medium confidence · 7 evidence points</div></div></div>
+      <div class="h4">Why?</div>
+      <table>
+        <tr><th></th><th>Pillar</th><th>Reading</th></tr>
+        <tr><td class="mark up">✓</td><td class="pillar">Pattern</td><td>Triple Top, one box (+1.1%) from the buy</td></tr>
+        <tr><td class="mark up">✓</td><td class="pillar">Trend</td><td>Above EMA50 72.1 and EMA200 61.5</td></tr>
+        <tr><td class="mark up">✓</td><td class="pillar">Momentum</td><td>MACD above signal</td></tr>
+        <tr><td class="mark up">✓</td><td class="pillar">Money flow</td><td>MFI 76 (67 a week ago)</td></tr>
+        <tr><td class="mark up">✓</td><td class="pillar">Volume</td><td>5.3× average</td></tr>
+        <tr><td class="mark up">✓</td><td class="pillar">Sector</td><td>Food &amp; Allied BP rising</td></tr>
+        <tr><td class="mark muted">–</td><td class="pillar">Volatility</td><td class="muted">No squeeze: range is not unusually tight</td></tr>
+      </table>
+      <div class="h4">Plan</div>
+      <div class="plan">
+        <div>Entry<b class="acc">76.0</b>+1.1%</div><div>Target 1<b class="up">80.0</b>+6.4%</div><div>Target 2<b class="up">98.0</b>+30.3%</div><div>Stop<b class="down">64.0</b>−14.9%</div>
+      </div>
+      <p class="small muted">Reward/risk 1.8 : 1. Main risk: a failed breakout that retests 75.0.</p>
+      <div class="foot">Rules-based rating from the chart's numbers. Not investment advice.</div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="opt">
+    <div class="tag">C · Bull / bear / plan <span>shortest; reads in ten seconds</span></div>
+    <div class="sheet">
+      <div class="kick">Watch · 1 of 4</div>
+      <div class="title">MEGHNAPET: Triple Top buy one box away</div>
+      <div><span class="pill">Grade A · Medium confidence</span></div>
+      <div class="case bull"><div class="lab up">Why buy</div>
+        <p>Triple Top one box away (76.0), above EMA50 and EMA200, MACD up, MFI 76 and rising, volume 5.3× average, sector rising.</p></div>
+      <div class="case bear"><div class="lab down">Why wait</div>
+        <p>Not triggered yet; breakouts often retest 75.0. The 98.0 count only applies once the buy prints.</p></div>
+      <div class="case plan2"><div class="lab">Plan</div>
+        <p class="mono">Buy 76.0 → T1 80.0 (+6.4%) → T2 98.0 (+30.3%)<br>Stop 64.0 (−14.9%) · R/R 1.8 : 1</p></div>
+      <div class="foot">Rules-based rating from the chart's numbers. Not investment advice.</div>
+    </div>
+  </div>
+</div>
+
+<div class="row-title">2 · Weaker setup: MIDLANDBNK (Grade B, with a caution)</div>
+<div class="grid">
+  <div class="opt">
+    <div class="tag">A · Research note</div>
+    <div class="sheet">
+      <div class="title">MIDLANDBNK: Double Top buy one box away</div>
+      <div class="strip">
+        <div class="grade b">B</div>
+        <div class="kpis">
+          <div>Confidence<b>Medium</b></div><div>Target<b class="up">22.5</b></div><div>Upside<b class="up">+27.8%</b></div>
+          <div>Entry<b class="acc">18.0</b></div><div>Stop<b class="down">15.5</b></div><div>Reward/risk<b>1.8 : 1</b></div>
+        </div>
+      </div>
+      <div class="h4">Thesis</div>
+      <p>A tight range under 17.5 with improving momentum; a close at 18.0 breaks it. The stock is ready, its sector is not, so we would take a smaller position.</p>
+      <div class="h4">Why?</div>
+      <ol class="why">
+        <li><b>Pattern.</b> Double Top buy at 18.0 (+2.3%).</li>
+        <li><b>Volatility.</b> Bollinger squeeze: the tightest range in 60 sessions.</li>
+        <li><b>Trend.</b> Above EMA50 (16.9) and EMA200 (17.4).</li>
+        <li><b>Money flow.</b> MFI 72 and rising; volume 1.8× average.</li>
+      </ol>
+      <div class="h4">Risks</div>
+      <ul><li class="warn">Bank bullish % is in a falling column: the sector is against it.</li><li>Stop 15.5 is 11.9% away.</li></ul>
+    </div>
+  </div>
+  <div class="opt">
+    <div class="tag">B · Scorecard</div>
+    <div class="sheet">
+      <div class="title">MIDLANDBNK: Double Top buy one box away</div>
+      <div class="verdict b"><div class="grade b">B</div><div><b>Buy on a close at 18.0, half size</b><div class="small muted">Medium confidence · 6 evidence points</div></div></div>
+      <table>
+        <tr><th></th><th>Pillar</th><th>Reading</th></tr>
+        <tr><td class="mark up">✓</td><td class="pillar">Pattern</td><td>Double Top, one box (+2.3%)</td></tr>
+        <tr><td class="mark up">✓</td><td class="pillar">Volatility</td><td>Squeeze: tightest in 60 sessions</td></tr>
+        <tr><td class="mark up">✓</td><td class="pillar">Trend</td><td>Above EMA50 and EMA200</td></tr>
+        <tr><td class="mark up">✓</td><td class="pillar">Money flow</td><td>MFI 72, rising; volume 1.8×</td></tr>
+        <tr><td class="mark down">✗</td><td class="pillar">Sector</td><td class="down">Bank BP in a falling column</td></tr>
+      </table>
+      <div class="plan"><div>Entry<b class="acc">18.0</b></div><div>T1<b class="up">18.5</b></div><div>T2<b class="up">22.5</b></div><div>Stop<b class="down">15.5</b></div></div>
+    </div>
+  </div>
+  <div class="opt">
+    <div class="tag">C · Bull / bear / plan</div>
+    <div class="sheet">
+      <div class="title">MIDLANDBNK: Double Top buy one box away</div>
+      <div><span class="pill b">Grade B · Medium confidence</span></div>
+      <div class="case bull"><div class="lab up">Why buy</div><p>Squeeze breaking at 18.0, above both long averages, MFI 72 rising, volume 1.8×.</p></div>
+      <div class="case bear"><div class="lab down">Why wait</div><p>Bank bullish % is falling: the sector is a headwind. Stop is 11.9% away.</p></div>
+      <div class="case plan2"><div class="lab">Plan</div><p class="mono">Buy 18.0 → T1 18.5 → T2 22.5 (+27.8%)<br>Stop 15.5 · R/R 1.8 : 1 · half size</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="row-title">3 · Market card: Trend · DSEX (no grade; the Why? explains the headline)</div>
+<div class="grid">
+  <div class="opt">
+    <div class="tag">A · Research note</div>
+    <div class="sheet">
+      <div class="title">Above all three averages</div>
+      <div class="h4">Thesis</div>
+      <p>Short-term trend has turned up, but DSEX still sits below its P&amp;F resistance line at 5,688. We treat this as a recovery inside a downtrend until that line breaks.</p>
+      <div class="h4">Why?</div>
+      <ol class="why">
+        <li><b>P&amp;F.</b> Buy signal since 17 Nov (diagonal Triple Top); next box 5,504, reversal at 5,472.</li>
+        <li><b>Averages.</b> Above EMA20 (+1.2%), EMA50 (+0.3%) and EMA200 (+0.8%).</li>
+        <li><b>Momentum.</b> MACD above its signal line, below zero; histogram rising 10 sessions.</li>
+        <li><b>Breadth.</b> 262 up, 77 down; bullish % 34.0 in a rising column.</li>
+      </ol>
+      <div class="h4">What would change our view</div>
+      <div class="change">A box at 5,472 reverses the P&amp;F column; a close above 5,688 breaks the resistance line.</div>
+    </div>
+  </div>
+  <div class="opt">
+    <div class="tag">B · Scorecard</div>
+    <div class="sheet">
+      <div class="title">Above all three averages</div>
+      <div class="verdict"><div class="grade">▲</div><div><b>Recovering, under resistance</b><div class="small muted">4 of 5 pillars up</div></div></div>
+      <table>
+        <tr><th></th><th>Pillar</th><th>Reading</th></tr>
+        <tr><td class="mark up">✓</td><td class="pillar">P&amp;F</td><td>Buy signal, X column; reversal 5,472</td></tr>
+        <tr><td class="mark up">✓</td><td class="pillar">Averages</td><td>Above EMA20, 50 and 200</td></tr>
+        <tr><td class="mark up">✓</td><td class="pillar">Momentum</td><td>MACD above signal, 10 sessions rising</td></tr>
+        <tr><td class="mark up">✓</td><td class="pillar">Breadth</td><td>262 up / 77 down; BP 34.0 rising</td></tr>
+        <tr><td class="mark down">✗</td><td class="pillar">Trend line</td><td class="down">Below the bearish resistance at 5,688</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="opt">
+    <div class="tag">C · Bull / bear / plan</div>
+    <div class="sheet">
+      <div class="title">Above all three averages</div>
+      <div class="case bull"><div class="lab up">For</div><p>P&amp;F buy, above all three EMAs, MACD rising 10 sessions, broad advance (262 / 77).</p></div>
+      <div class="case bear"><div class="lab down">Against</div><p>Under the bearish resistance line (5,688); MACD still below zero; bullish % only 34.</p></div>
+      <div class="case plan2"><div class="lab">Levels</div><p class="mono">Breaks out above 5,688 · turns down at 5,472</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="pick">Pick A, B or C, or a mix (for example: B's scorecard with A's thesis and "What would change our view").</div>
+</body>
+</html>

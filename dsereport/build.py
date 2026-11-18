@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from . import brief, display, events, flows, market, papers as papers_mod, periods, sectors, setups as setups_mod, signals, trend
+from . import brief, display, events, flows, market, market_view, papers as papers_mod, periods, sectors, setups as setups_mod, signals, trend
 from .schema import SCHEMA_VERSION
 
 FIRST_SETUP_CARD = 6
@@ -19,13 +19,14 @@ def _period(I: dict, p: str, setups: list, records: list, paper_feed: dict | Non
     win = periods.window(I["sessions"], p)
     codes, names = list(I["stocks"]), [r["sector"] for r in rows]
     pp = papers_mod.select(paper_feed, win[0], win[-1], codes, names) if paper_feed and win else []
-    return {
+    out = {
         "label": periods.label(I["sessions"], p), "sessions": len(win),
         "summary": brief.summarize(p, mkt, tr, flow, rows, sigs, setups, records),
         "market": mkt, "trend": tr, "flow": flow,
         "sectors": {"rows": rows, "highlights": sectors.highlights(rows)},
         "signals": sigs, "news": events.company_news(I, p), "papers": pp,
     }
+    return {**out, "views": market_view.views(p, out)}
 
 
 def build_report(I: dict, paper_feed: dict | None = None, built_at: str | None = None) -> dict:

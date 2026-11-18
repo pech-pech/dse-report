@@ -159,7 +159,7 @@ def _item(s, sector_bp) -> dict:
     item["pattern"] = _buy_name(item["pf_cols"]).removeprefix("a ")
     item["reasoning"] = _reasoning(s, item, mfi_now, mfi_then)
     del item["_macd"]
-    item["view"] = view.analyst_view(s, item, mfi_now, mfi_then)
+    item["view"] = view.analyst_view(s, item, mfi_now, mfi_then, sector_col)
     return item
 
 

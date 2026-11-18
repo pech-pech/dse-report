@@ -6,7 +6,8 @@ from dsereport import schema
 def _period():
     return {"label": "Tue 17 Nov", "sessions": 1, "market": {}, "trend": {}, "flow": {}, "sectors": {}, "news": [], "papers": [],
             "summary": {"verdict": "Up", "lede": "DSEX rose.", "glance": [], "answers": [{}] * 8, "notification": {}},
-            "signals": {"buys": [], "sells": [], "beating": [], "volume": [], "counts": {}}}
+            "signals": {"buys": [], "sells": [], "beating": [], "volume": [], "counts": {}},
+            "views": {c: None for c in schema.MARKET_CARDS}}
 
 
 def good():
@@ -66,3 +67,29 @@ def test_nan_and_odd_types_are_rejected():
     assert any("unsupported type set" in e for e in errs)
     assert any("non-string key" in e for e in errs)
     assert copy.deepcopy(good()) == good()
+
+
+def _view():
+    return {"badge": "▲", "tone": "up", "verdict": "Broad advance, money flowing in", "sub": "3 of 3 pillars up",
+            "thesis": "DSEX rose. We would watch 5,472.", "plan_note": None, "change_view": "A box at 5,472.",
+            "method": "Rules-based.", "plan": [{"label": "DSEX close", "value": 5496.7, "pct": None, "tone": "acc"}],
+            "pillars": [{"name": n, "mark": "up", "reading": "262 up"} for n in ("A", "B", "C")]}
+
+
+def test_a_market_view_passes():
+    r = good()
+    r["periods"]["day"]["views"]["summary"] = _view()
+    assert schema.validate(r) == []
+
+
+def test_market_view_problems_are_named():
+    r = good()
+    v = _view()
+    v.update(badge="A", verdict="x" * 49, thesis="Close at None.", pillars=v["pillars"][:2])
+    v["plan"][0]["tone"] = "warn"
+    r["periods"]["day"]["views"]["trend"] = v
+    del r["periods"]["week"]["views"]["flow"]
+    errs = schema.validate(r)
+    for want in ("trend.badge", "verdict: longer than 48", "thesis: contains None", "at least 3 pillars",
+                 "plan[0].tone", "week.views: missing flow"):
+        assert any(want in e for e in errs), want
