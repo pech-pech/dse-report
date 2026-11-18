@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from screeners import indicators as ind
 
-from dsereport import fmt
+from dsereport import fmt, view
 
 MIN_BARS = 20            # MFI(14) needs 14 bars, plus 6 to compare with five sessions ago
 MFI_N = 14
@@ -156,8 +156,10 @@ def _item(s, sector_bp) -> dict:
         "rvol": s.get("vol_ratio"),
         "_macd": met["macd_above_signal"],
     }
+    item["pattern"] = _buy_name(item["pf_cols"]).removeprefix("a ")
     item["reasoning"] = _reasoning(s, item, mfi_now, mfi_then)
     del item["_macd"]
+    item["view"] = view.analyst_view(s, item, mfi_now, mfi_then)
     return item
 
 

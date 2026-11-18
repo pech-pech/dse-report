@@ -10,7 +10,7 @@ from datetime import date, timedelta
 DSEX = "00DSEX"
 JOB_TIMEOUT_S = 30 * 60
 DECLARATION_DAYS_BACK = 200      # how far back a record date's dividend declaration may lie
-MAX_ARCHIVES = 40                # company news histories fetched per run (one AmarStock request each)
+MAX_ARCHIVES = 150               # company news histories fetched per run (one AmarStock request each, ~1 s)
 ARCHIVE_DELAY_S = 1.0
 
 
