@@ -13,6 +13,10 @@ on:
         description: "Build but do not publish (the site is kept as a run artifact)"
         type: boolean
         default: false
+      rebuild:
+        description: "Rebuild and republish even when the site already has this session (after a builder fix)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -89,7 +93,7 @@ jobs:
           touch site/.nojekyll
 
       - name: Build the report
-        run: dsereport build --db "$DB" --out site --if-newer
+        run: dsereport build --db "$DB" --out site ${{ inputs.rebuild && ' ' || '--if-newer' }}
 
       - name: Publish
         if: ${{ !inputs.dry_run }}

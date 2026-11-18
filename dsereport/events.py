@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, timedelta
 
 from dsereport import fmt, periods
 
@@ -14,6 +14,8 @@ KIND_ORDER = ("earnings", "cash_dividend", "stock_dividend", "record_date", "agm
 DIVIDEND_KINDS = {"cash_dividend": "cash", "stock_dividend": "stock"}
 FACE_VALUE_TK = 10.0
 SETTLEMENT_SESSIONS = 2          # T+2: the last day to buy is two sessions before the record date
+DIVIDEND_LOOKBACK_DAYS = 180     # a record-date notice (e.g. Spot News) pairs with a declaration up to this old
+TOO_LATE_SHOWN = 3               # record dates whose last day to buy has passed, listed after the buyable ones
 PLAIN_RECORD_NOTICE = "Dividend Declaration"
 
 _NUM = r"(\(?[\d.]+\)?)"
@@ -186,7 +188,7 @@ def _dividend_text(divs: list[dict], none_declared: bool, title: str) -> str:
         return " + ".join(f"{d['pct']:g}% {d['kind']}" for d in divs)
     if none_declared:
         return "No dividend"
-    return f"No dividend found; notice: {title}"
+    return "Dividend not in the news yet"
 
 
 def _session_info(I: dict, record_date: str) -> dict:
@@ -201,10 +203,26 @@ def _session_info(I: dict, record_date: str) -> dict:
             "can_still_buy": bool(last_buy and last_buy > asof)}
 
 
+def _declaration(I: dict, rec: dict) -> tuple[list[dict], str | None]:
+    """The dividend rows a record date belongs to: those announced with it, else the company's latest
+    declaration in the DIVIDEND_LOOKBACK_DAYS before the record date (a later notice, such as DSE's Spot
+    News list, repeats the record date without the dividend)."""
+    code, announced = rec["code"], rec.get("announced")
+    rows = [e for e in I.get("events") or [] if e.get("code") == code and e.get("kind") in DIVIDEND_KINDS]
+    same = [e for e in rows if e.get("announced") == announced]
+    if same:
+        return same, announced
+    start = (date.fromisoformat(rec["date"]) - timedelta(days=DIVIDEND_LOOKBACK_DAYS)).isoformat()
+    window = [e for e in rows if start <= (e.get("announced") or "") <= rec["date"]]
+    if not window:
+        return [], announced
+    latest = max(e["announced"] for e in window)
+    return [e for e in window if e["announced"] == latest], latest
+
+
 def _record_item(I: dict, rec: dict) -> dict:
-    code, declared = rec["code"], rec.get("announced")
-    div_rows = [e for e in I.get("events") or []
-                if e.get("code") == code and e.get("announced") == declared and e.get("kind") in DIVIDEND_KINDS]
+    code = rec["code"]
+    div_rows, declared = _declaration(I, rec)
     divs, none_declared = _dividends(div_rows)
     series = _series(I, code)
     close = series[-1][1] if series else None
@@ -220,14 +238,18 @@ def _record_item(I: dict, rec: dict) -> dict:
 
 
 def record_dates(I: dict, limit: int = 10) -> list[dict]:
-    """Future record dates (after asof), soonest first, one per code and date."""
+    """Future record dates (after asof), one per code and date: the ones that can still be bought for first,
+    soonest first, then up to TOO_LATE_SHOWN whose last day to buy has passed."""
     asof, seen, recs = I["asof"], set(), []
     rows = [e for e in I.get("events") or [] if e.get("kind") == "record_date" and (e.get("date") or "") > asof]
     for rec in sorted(rows, key=lambda e: (e["date"], e["code"])):
         if (rec["code"], rec["date"]) not in seen:
             seen.add((rec["code"], rec["date"]))
             recs.append(rec)
-    return [_record_item(I, rec) for rec in recs[:limit]]
+    items = [_record_item(I, rec) for rec in recs]
+    buyable = [r for r in items if r["can_still_buy"]]
+    too_late = [r for r in items if not r["can_still_buy"]][:TOO_LATE_SHOWN]
+    return (buyable + too_late)[:limit]
 
 
 # ---------- company news ----------

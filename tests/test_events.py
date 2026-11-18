@@ -79,7 +79,8 @@ def test_record_dates_exclude_past_and_sort_and_limit():
     rows = [_row(c, "record_date", d, DECL, detail="record date (Dividend Declaration)")
             for c, d in [("PAST", "2026-11-17"), ("B", "2026-12-01"), ("A", "2026-11-19"), ("C", "2026-11-25")]]
     out = ev.record_dates(_inputs(rows), limit=2)
-    assert [r["code"] for r in out] == ["A", "C"]
+    assert [r["code"] for r in out] == ["C", "B"]           # buyable first; A's last day to buy has passed
+    assert [r["code"] for r in ev.record_dates(_inputs(rows))] == ["C", "B", "A"]
 
 
 def test_no_dividend_and_unknown_dividend_texts():
@@ -91,7 +92,7 @@ def test_no_dividend_and_unknown_dividend_texts():
     out = {r["code"]: r for r in ev.record_dates(_inputs(rows))}
     assert out["Z"]["dividend_text"] == "No dividend" and out["Z"]["dividends"] == []
     assert out["Z"]["cash_yield_pct"] is None
-    assert out["F"]["dividend_text"] == "No dividend found; notice: Spot News"
+    assert out["F"]["dividend_text"] == "Dividend not in the news yet"
 
 
 def test_tk_per_share_cash_and_daily_close_fallback():
@@ -215,8 +216,11 @@ def real():
 def test_real_fixture_record_dates(real):
     out = ev.record_dates(real)
     assert 1 <= len(out) <= 10
-    dates = [r["record_date"] for r in out]
-    assert dates == sorted(dates) and all(d > real["asof"] for d in dates)
+    buy = [r["record_date"] for r in out if r["can_still_buy"]]
+    late = [r["record_date"] for r in out if not r["can_still_buy"]]
+    assert [r["can_still_buy"] for r in out] == sorted((r["can_still_buy"] for r in out), reverse=True)
+    assert buy == sorted(buy) and late == sorted(late) and len(late) <= ev.TOO_LATE_SHOWN
+    assert all(r["record_date"] > real["asof"] for r in out)
     for r in out:
         assert r["last_buy"] < r["record_date"] and r["sessions_away"] >= 1
         assert isinstance(r["dividend_text"], str) and r["dividend_text"]
@@ -233,3 +237,34 @@ def test_real_fixture_company_news(real):
             assert n["text"] and n["kind"] in ev.LABELS
         json.dumps(out, allow_nan=False)
     assert ev.company_news(real, "month")
+
+
+def test_spot_news_record_date_pairs_with_earlier_declaration():
+    rows = [
+        _row("ACME", "cash_dividend", "2026-10-27", "2026-10-27", 40.0, "40% cash, year/period ended 2026-06-30"),
+        _row("ACME", "record_date", "2026-11-24", "2026-11-15", detail="record date (Spot News)", title="Spot News"),
+    ]
+    r = ev.record_dates(_inputs(rows))[0]
+    assert r["dividend_text"] == "40% cash" and r["declared_on"] == "2026-10-27"
+    assert r["dividends"] == [{"kind": "cash", "pct": 40.0, "tk_per_share": 4.0}]
+
+
+def test_only_the_latest_declaration_in_the_lookback_counts():
+    rows = [
+        _row("ACME", "cash_dividend", "2026-03-01", "2026-03-01", 10.0, "10% cash, year/period ended 2025-12-31"),
+        _row("ACME", "cash_dividend", "2026-10-27", "2026-10-27", 0.0, "no dividend, year/period ended 2026-06-30"),
+        _row("ACME", "record_date", "2026-11-24", "2026-11-15", detail="record date (Spot News)", title="Spot News"),
+        _row("OLD", "cash_dividend", "2026-01-02", "2026-01-02", 30.0, "30% cash, year/period ended 2025-09-30"),
+        _row("OLD", "record_date", "2026-11-24", "2026-11-15", detail="record date (Spot News)", title="Spot News"),
+    ]
+    out = {r["code"]: r for r in ev.record_dates(_inputs(rows))}
+    assert out["ACME"]["dividend_text"] == "No dividend" and out["ACME"]["declared_on"] == "2026-10-27"
+    assert out["OLD"]["dividend_text"] == "Dividend not in the news yet"      # older than the lookback
+    assert out["OLD"]["declared_on"] == "2026-11-15"
+
+
+def test_too_late_record_dates_are_capped():
+    rows = [_row(f"L{i}", "record_date", "2026-11-18", DECL, detail="record date") for i in range(6)]
+    rows.append(_row("OK", "record_date", "2026-11-30", DECL, detail="record date"))
+    out = ev.record_dates(_inputs(rows))
+    assert out[0]["code"] == "OK" and len(out) == 1 + ev.TOO_LATE_SHOWN

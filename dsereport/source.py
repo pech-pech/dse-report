@@ -17,6 +17,7 @@ DAILY_SESSIONS = 45      # per-session rows: a full month (22) plus the 20 sessi
 PF_TAIL = 7              # P&F columns kept per stock
 RESISTANCE_COLUMNS = 40  # columns searched for the nearest earlier X-column top above a pending buy trigger
 EVENT_DAYS_BACK = 45
+DIVIDEND_DAYS_BACK = 200   # declarations a later record-date notice may pair with (events.DIVIDEND_LOOKBACK_DAYS)
 
 
 def _tail(seq, n):
@@ -79,9 +80,12 @@ def _daily(con, sessions) -> list:
 
 def _events(con, asof) -> list:
     q = """SELECT code, kind, date, announced, value, detail, title FROM corp_events
-           WHERE announced >= date(?, ?) OR date >= date(?, ?) ORDER BY announced, code"""
-    back = f"-{EVENT_DAYS_BACK} day"
-    return [dict(zip(("code", "kind", "date", "announced", "value", "detail", "title"), r)) for r in con.execute(q, (asof, back, asof, back))]
+           WHERE announced >= date(?, ?) OR date >= date(?, ?)
+              OR (kind IN ('cash_dividend', 'stock_dividend') AND announced >= date(?, ?))
+           ORDER BY announced, code"""
+    back, div_back = f"-{EVENT_DAYS_BACK} day", f"-{DIVIDEND_DAYS_BACK} day"
+    return [dict(zip(("code", "kind", "date", "announced", "value", "detail", "title"), r))
+            for r in con.execute(q, (asof, back, asof, back, asof, div_back))]
 
 
 def collect(db_path: str) -> dict[str, Any]:
