@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dse-report"
+version = "0.1.0"
+description = "DSE Report: builds the daily technical report JSON for the Dhaka Stock Exchange"
+requires-python = ">=3.9"
+dependencies = [
+    # the engine: P&F charts, screeners, sectors and the price store (pech-pech/cl, pinned like pnf-desktop)
+    "dse-pnf @ git+https://github.com/pech-pech/cl@engine-v1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-cov>=4"]
+
+[project.scripts]
+dsereport = "dsereport.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["dsereport*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+markers = ["slow: builds the engine demo store (about a minute)"]
