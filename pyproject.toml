@@ -9,7 +9,7 @@ description = "DSE Report: builds the daily technical report JSON for the Dhaka 
 requires-python = ">=3.9"
 dependencies = [
     # the engine: P&F charts, screeners, sectors and the price store (pech-pech/cl, pinned like pnf-desktop)
-    "dse-pnf @ git+https://github.com/pech-pech/cl@engine-v1",
+    "dse-pnf @ git+https://github.com/pech-pech/cl@engine-v1.1",
 ]
 
 [project.optional-dependencies]

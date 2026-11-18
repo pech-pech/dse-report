@@ -1,5 +1,5 @@
 # Daily DSE report: refresh the price store, build the report, publish v1/*.json to the gh-pages branch (GitHub Pages).
-# Secret ENGINE_TOKEN: a fine-grained read-only token (Contents: read) for pech-pech/cl (the engine, pinned engine-v1)
+# Secret ENGINE_TOKEN: a fine-grained read-only token (Contents: read) for pech-pech/cl (the engine, pinned engine-v1.1)
 # and pech-pech/pnf-desktop (its `data` release holds the seed price snapshot).
 name: daily-report
 

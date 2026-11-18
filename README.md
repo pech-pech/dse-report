@@ -1,6 +1,6 @@
 # DSE Report: report builder
 
-Builds the daily technical report JSON for the DSE Report Android app from the dse-pnf engine (pinned `engine-v1`).
+Builds the daily technical report JSON for the DSE Report Android app from the dse-pnf engine (pinned `engine-v1.1`: engine-v1 with DSE at www.dse.com.bd).
 Phase 1 of `docs/plans/2026-11-18-dse-report-app.md` (in pnf-desktop). Module contract: `CONTRACT.md`.
 
 ```bash
