@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Install: cp to ~/Library/LaunchAgents/ and `launchctl bootstrap gui/$(id -u) <that path>`.
+     Times are the Mac's local time (Asia/Dhaka). A slot missed while the Mac slept runs on wake.
+     launchd cannot run two different arguments from one job, so 16:55 is a second job (…trigger.final). -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.pech-pech.dse-report.trigger.final</string>
+  <key>ProgramArguments</key>
+  <array><string>/Users/mmr/dse-report/scripts/mac-trigger.sh</string><string>final</string></array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>55</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>55</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>55</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>55</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>55</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>/Users/mmr/Library/Logs/dse-report-trigger.log</string>
+  <key>StandardErrorPath</key><string>/Users/mmr/Library/Logs/dse-report-trigger.log</string>
+</dict>
+</plist>

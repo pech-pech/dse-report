@@ -28,7 +28,7 @@ browser, never in the app's WebView.
 
 ## Daily cloud build (`.github/workflows/daily.yml`)
 
-Sun–Thu at 16:50 Dhaka (retry 18:30): restore the price store from the Actions cache (first run: seed from
+Started from the owner's Mac by launchd Sun–Thu at 15:00 Dhaka and again at 16:55 with `rebuild` (the complete end-of-day data replaces the 15:00 report); GitHub's own schedule (15:10, 16:00) is only the fallback, since it ran 8 h late on 2026-11-18. Install the Mac jobs from `scripts/` (see the plist comments; log in `~/Library/Logs/dse-report-trigger.log`). Each run: restore the price store from the Actions cache (first run: seed from
 pnf-desktop's `data` release snapshot), `dsereport refresh` (the engine's own refresh job: prices, sectors, company
 news), then `dsereport build --out site --if-newer` and push `v1/` to `gh-pages`. A holiday publishes nothing.
 Run it by hand from the Actions tab; `dry_run` keeps the site as a run artifact instead of publishing.

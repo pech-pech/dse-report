@@ -5,8 +5,10 @@ name: daily-report
 
 on:
   schedule:
-    - cron: "50 10 * * 0-4"   # 16:50 Dhaka, Sun-Thu, after the close and AmarStock's end-of-day prices
-    - cron: "30 12 * * 0-4"   # 18:30 Dhaka retry; --if-newer makes it a no-op when 16:50 already published
+    # GitHub runs schedules late (8 h on 2026-11-18), so a launchd job on the owner's Mac starts the run at 15:00
+    # and 16:55 Dhaka (scripts/mac-trigger.sh); these two stay as the fallback. --if-newer makes repeats no-ops.
+    - cron: "10 9 * * 0-4"    # 15:10 Dhaka, Sun-Thu
+    - cron: "0 10 * * 0-4"    # 16:00 Dhaka
   workflow_dispatch:
     inputs:
       dry_run:
