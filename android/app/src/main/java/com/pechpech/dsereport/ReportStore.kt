@@ -11,9 +11,9 @@ import java.time.Instant
  */
 class ReportStore(val dir: File, private val clock: () -> Instant = Instant::now) {
 
-    enum class Outcome { NEW, SAME, INVALID }
+    enum class Outcome { NEW, UPDATED, SAME, INVALID }
 
-    data class Checked(val asOf: String, val title: String, val lines: List<String>)
+    data class Checked(val asOf: String, val title: String, val lines: List<String>, val builtAt: String = "")
 
     init {
         dir.mkdirs()
@@ -22,22 +22,32 @@ class ReportStore(val dir: File, private val clock: () -> Instant = Instant::now
     val latestAsOf: String?
         get() = runCatching { JSONObject(File(dir, LATEST).readText()).getString("asOf") }.getOrNull()
 
-    /** Validate and save a downloaded report. NEW only when its session is newer than the saved one. */
+    private val latestBuiltAt: String
+        get() = runCatching { JSONObject(File(dir, LATEST).readText()).optString("builtAt") }.getOrNull().orEmpty()
+
+    /**
+     * Validate and save a downloaded report. NEW when its session is newer than the saved one; UPDATED when it
+     * is a later build of the same session (the 16:55 rebuild with complete end-of-day data), saved but not
+     * notified again; SAME otherwise.
+     */
     fun save(body: String): Pair<Outcome, Checked?> {
         val checked = check(body) ?: run {
             writeMeta(offline = false, error = "The downloaded report was not readable")
             return Outcome.INVALID to null
         }
         val current = latestAsOf
-        if (current != null && checked.asOf <= current) {
-            writeMeta(offline = false, error = null)
-            return Outcome.SAME to checked
+        val outcome = when {
+            current == null || checked.asOf > current -> Outcome.NEW
+            checked.asOf == current && checked.builtAt.isNotEmpty() && checked.builtAt > latestBuiltAt -> Outcome.UPDATED
+            else -> Outcome.SAME
         }
-        atomicWrite(File(dir, "${checked.asOf}.json"), body)
-        atomicWrite(File(dir, LATEST), body)
-        prune()
+        if (outcome != Outcome.SAME) {
+            atomicWrite(File(dir, "${checked.asOf}.json"), body)
+            atomicWrite(File(dir, LATEST), body)
+            prune()
+        }
         writeMeta(offline = false, error = null)
-        return Outcome.NEW to checked
+        return outcome to checked
     }
 
     fun markOffline(error: String) = writeMeta(offline = true, error = error)
@@ -73,6 +83,7 @@ class ReportStore(val dir: File, private val clock: () -> Instant = Instant::now
         const val MAX_BYTES = 2_000_000
         private val DATED = Regex("""\d{4}-\d{2}-\d{2}\.json""")
         private val DATE = Regex("""\d{4}-\d{2}-\d{2}""")
+        private val BUILT = Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z""")
 
         /** The fields the shell relies on; the page checks the rest. Null when the body is not a v1 report. */
         fun check(body: String): Checked? {
@@ -88,7 +99,8 @@ class ReportStore(val dir: File, private val clock: () -> Instant = Instant::now
             if (title.isBlank()) return null
             val arr = n.optJSONArray("lines")
             val lines = (0 until (arr?.length() ?: 0)).map { arr!!.optString(it).take(160) }.filter { it.isNotBlank() }
-            return Checked(asOf, title, lines.take(6))
+            val builtAt = o.optString("builtAt").takeIf { BUILT.matches(it) }.orEmpty()   // ISO UTC: compares as text
+            return Checked(asOf, title, lines.take(6), builtAt)
         }
     }
 }

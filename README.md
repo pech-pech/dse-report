@@ -35,3 +35,17 @@ Run it by hand from the Actions tab; `dry_run` keeps the site as a run artifact 
 
 Needs the secret `ENGINE_TOKEN`: a fine-grained token, read-only (Contents: read), for `pech-pech/cl` and
 `pech-pech/pnf-desktop`. Report URL: `https://pech-pech.github.io/dse-report/v1/latest.json`.
+
+## Mac jobs (`scripts/`)
+
+| Job | When (Sun–Thu, Dhaka) | Does |
+|---|---|---|
+| `com.pech-pech.dse-report.trigger` | 15:00 | starts the cloud build |
+| `com.pech-pech.dse-report.trigger.final` | 16:55 | starts it again with `rebuild` (complete end-of-day data) |
+| `com.pech-pech.dse-report.store` | 15:05, 17:00 | refreshes the desktop apps' store `~/.dse_pnf/prices.sqlite3` while they are closed (`mac-refresh-store.sh`) |
+
+Install: copy the plist to `~/Library/LaunchAgents/`, then `launchctl bootstrap gui/$(id -u) <path>`. Logs:
+`~/Library/Logs/dse-report-trigger.log`, `~/Library/Logs/dse-report-store.log`.
+
+The phone app downloads at 15:15 and 17:10 with an exact alarm (`DailyAlarm.kt`), saves a later build of the same
+session without a second notification, and keeps WorkManager as the retry path and daily fallback.

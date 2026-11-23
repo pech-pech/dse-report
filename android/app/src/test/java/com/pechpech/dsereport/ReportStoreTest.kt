@@ -14,8 +14,9 @@ import java.time.Instant
 class ReportStoreTest {
     @get:Rule val tmp = TemporaryFolder()
 
-    private fun report(asOf: String, title: String = "DSEX +0.61% · 23 buys · 4 sells") = JSONObject()
-        .put("schema", 1).put("asOf", asOf)
+    private fun report(asOf: String, title: String = "DSEX +0.61% · 23 buys · 4 sells", builtAt: String? = null) =
+        JSONObject()
+        .put("schema", 1).put("asOf", asOf).apply { if (builtAt != null) put("builtAt", builtAt) }
         .put("periods", JSONObject().put("day", JSONObject()).put("week", JSONObject()).put("month", JSONObject()))
         .put("notification", JSONObject().put("title", title).put("lines", org.json.JSONArray(listOf("a", "", "b"))))
         .toString()
@@ -47,6 +48,25 @@ class ReportStoreTest {
         assertEquals(ReportStore.Outcome.SAME, s.save(report("2026-11-17")).first)
         assertEquals(ReportStore.Outcome.SAME, s.save(report("2026-11-16")).first)
         assertEquals("2026-11-17", s.latestAsOf)
+    }
+
+    @Test fun `a later build of the same session replaces the saved one as an update`() {
+        val s = store()
+        s.save(report("2026-11-23", title = "early", builtAt = "2026-11-23T09:02:02Z"))
+        val (outcome, c) = s.save(report("2026-11-23", title = "final", builtAt = "2026-11-23T10:58:40Z"))
+        assertEquals(ReportStore.Outcome.UPDATED, outcome)
+        assertEquals("final", c!!.title)
+        assertEquals("final", JSONObject(File(s.dir, "latest.json").readText()).getJSONObject("notification").getString("title"))
+        assertEquals("final", JSONObject(File(s.dir, "2026-11-23.json").readText()).getJSONObject("notification").getString("title"))
+    }
+
+    @Test fun `an equal or earlier build of the same session is not an update`() {
+        val s = store()
+        s.save(report("2026-11-23", title = "final", builtAt = "2026-11-23T10:58:40Z"))
+        assertEquals(ReportStore.Outcome.SAME, s.save(report("2026-11-23", builtAt = "2026-11-23T10:58:40Z")).first)
+        assertEquals(ReportStore.Outcome.SAME, s.save(report("2026-11-23", builtAt = "2026-11-23T09:02:02Z")).first)
+        assertEquals(ReportStore.Outcome.SAME, s.save(report("2026-11-23")).first)
+        assertEquals("final", JSONObject(File(s.dir, "latest.json").readText()).getJSONObject("notification").getString("title"))
     }
 
     @Test fun `bad bodies are rejected and leave the saved report alone`() {
