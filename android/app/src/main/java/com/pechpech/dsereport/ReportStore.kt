@@ -7,7 +7,8 @@ import java.time.Instant
 /**
  * The saved reports, in the app's private files: latest.json (what the page shows), one file per session
  * (the newest [KEEP] kept) and meta.json (saved time, offline flag, last error). The page reads them through
- * WebViewAssetLoader at /data/; nothing else reads or writes them.
+ * WebViewAssetLoader at /data/; nothing else reads or writes them. ChartStore saves charts/<date>/ beside them;
+ * a day's charts are deleted here when its report is.
  */
 class ReportStore(val dir: File, private val clock: () -> Instant = Instant::now) {
 
@@ -64,6 +65,10 @@ class ReportStore(val dir: File, private val clock: () -> Instant = Instant::now
     private fun prune() {
         val dated = dir.listFiles { f -> DATED.matches(f.name) }?.sortedByDescending { it.name } ?: return
         dated.drop(KEEP).forEach { it.delete() }
+        // a day's saved charts go with its report
+        File(dir, ChartStore.DIR).listFiles { f -> f.isDirectory && DATE.matches(f.name) }
+            ?.filter { !File(dir, "${it.name}.json").exists() }
+            ?.forEach { it.deleteRecursively() }
     }
 
     private fun atomicWrite(target: File, text: String) {

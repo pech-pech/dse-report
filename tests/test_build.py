@@ -124,3 +124,52 @@ def test_cli_prunes_reports_that_leave_the_index(tmp_path, monkeypatch):
     assert len(index) == cli.KEEP_REPORTS and index[0] == "2026-11-17" and "2026-08-01" not in index
     assert not (v1 / "2026-08-01.json").exists() and (v1 / "2026-08-02.json").exists()
     assert (v1 / "latest.json").exists() and (v1 / "index.json").exists()
+
+
+def _chart_inputs(inputs):
+    """The fixture plus a small engine-shaped chart for every stock (the saved fixture predates charts)."""
+    page = {"levels": [10.0 + k for k in range(20)], "b0": 0, "cols": [["X", 2, 9, {"4": "B"}, "2026-10-01", "2026-11-17"]],
+            "trendlines": [{"kind": "bull", "anchor": 0, "base": 1, "end": 3}], "price_box": 9}
+    n = 5
+    charts = {c: {"pf": page, "dates": inputs["sessions"][-n:], "close": [10.0] * n, "rsi": [50.0] * n,
+                  "macd": [0.1] * n, "macd_signal": [0.0] * n, "macd_hist": [0.1] * n} for c in inputs["stocks"]}
+    return {**inputs, "charts": charts}
+
+
+def test_cli_writes_a_chart_per_named_stock(tmp_path, inputs, capsys):
+    path = tmp_path / "in.json"
+    path.write_text(json.dumps(_chart_inputs(inputs)))
+    out = tmp_path / "site"
+    assert cli.main(["build", "--inputs", str(path), "--out", str(out), "--no-papers"]) == 0
+    rep = json.loads((out / "v1" / "latest.json").read_text())
+    folder = out / "v1" / rep["charts"]["path"]
+    assert rep["charts"]["path"] == "charts/2026-11-17/" and rep["charts"]["codes"]
+    assert sorted(p.stem for p in folder.glob("*.json")) == rep["charts"]["codes"]
+    one = json.loads((folder / f"{rep['charts']['codes'][0]}.json").read_text())
+    assert one["asOf"] == "2026-11-17" and one["pf"]["cols"][0][3] == {"4": "B"}
+    assert "stock charts" in capsys.readouterr().out
+
+
+def test_cli_without_chart_inputs_lists_no_codes(tmp_path):
+    out = tmp_path / "site"
+    assert cli.main(["build", "--inputs", FIXTURE, "--out", str(out), "--no-papers"]) == 0
+    assert json.loads((out / "v1" / "latest.json").read_text())["charts"]["codes"] == []
+
+
+def test_cli_refuses_a_bad_chart(tmp_path, inputs, capsys):
+    bad = _chart_inputs(inputs)
+    for c in bad["charts"].values():
+        c["rsi"] = [50.0]                      # a different length from the dates
+    path = tmp_path / "in.json"
+    path.write_text(json.dumps(bad))
+    assert cli.main(["build", "--inputs", str(path), "--out", str(tmp_path / "site"), "--no-papers"]) == 1
+    assert "different lengths" in capsys.readouterr().err
+
+
+def test_prune_drops_chart_folders_with_their_report(tmp_path):
+    v1 = tmp_path / "v1"
+    for d in ("2026-11-16", "2026-11-17"):
+        (v1 / "charts" / d).mkdir(parents=True)
+        (v1 / "charts" / d / "AAA.json").write_text("{}")
+    cli._prune(str(v1), {"2026-11-17"})
+    assert not (v1 / "charts" / "2026-11-16").exists() and (v1 / "charts" / "2026-11-17" / "AAA.json").exists()

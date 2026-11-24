@@ -15,6 +15,8 @@ SERIES_BARS = 300        # DSEX and sector closes kept for EMA200 / MACD
 STOCK_BARS = 60          # per-stock bars kept (MFI, squeeze, sketches)
 DAILY_SESSIONS = 45      # per-session rows: a full month (22) plus the 20 sessions before it, with margin
 PF_TAIL = 7              # P&F columns kept per stock
+CHART_BARS = 120         # per-stock bars for the chart screen's RSI and MACD
+CHART_DAYS = 730         # the chart screen's P&F history, as the engine's chart(code, days=...) takes it
 RESISTANCE_COLUMNS = 40  # columns searched for the nearest earlier X-column top above a pending buy trigger
 EVENT_DAYS_BACK = 45
 DIVIDEND_DAYS_BACK = 200   # declarations a later record-date notice may pair with (events.DIVIDEND_LOOKBACK_DAYS)
@@ -68,6 +70,30 @@ def _stock(code, st, inds, row, chart, info) -> dict:
     return out
 
 
+def _day(v) -> str | None:
+    return None if v is None else str(v)[:10]
+
+
+def _chart_page(page) -> dict | None:
+    """The engine's chart page cut to what the app draws: box levels, columns with their month marks, trend lines."""
+    if not page or not page.get("columns") or not page.get("levels"):
+        return None
+    cols = [[c["d"], c["lo"], c["hi"], {str(k): str(v) for k, v in (c.get("m") or {}).items()},
+             _day(c.get("sd")), _day(c.get("ed"))] for c in page["columns"]]
+    lines = [{k: t.get(k) for k in ("kind", "anchor", "base", "end")} for t in page.get("trendlines") or []]
+    return {"levels": [round(float(x), 4) for x in page["levels"]], "b0": page["b0"], "cols": cols,
+            "trendlines": lines, "price_box": page.get("price_box")}
+
+
+def _chart_input(m, code, st, inds) -> dict:
+    """What the chart screen needs for one stock: the P&F page and the last CHART_BARS closes, RSI and MACD."""
+    out = {"pf": _chart_page(m.chart(code, days=CHART_DAYS)),
+           "dates": [str(d) for d in list(st.dates)[-CHART_BARS:]], "close": _tail(st.close, CHART_BARS)}
+    for k in ("rsi", "macd", "macd_signal", "macd_hist"):
+        out[k] = _tail(getattr(inds, k), CHART_BARS) if inds is not None else []
+    return out
+
+
 def _daily(con, sessions) -> list:
     """Per stock and session: close, previous close, volume, for the last DAILY_SESSIONS sessions (equities only)."""
     first = sessions[-(DAILY_SESSIONS + 1)]
@@ -105,10 +131,11 @@ def collect(db_path: str) -> dict[str, Any]:
     lv = lambda b: page["levels"][b - page["b0"]]  # noqa: E731  box index -> price
     cols = page.get("columns", [])[-PF_TAIL:]
     dsex_pf = {"cols": [[c["d"], lv(c["lo"]), lv(c["hi"]), c["hi"] - c["lo"] + 1] for c in cols], "reversal": 3} if cols else None
-    stocks = {}
+    stocks, charts = {}, {}
     for code, st in snap["stocks"].items():
         if code in rows:
             stocks[code] = _stock(code, st, snap["inds"].get(code), rows[code], snap["charts"].get(code), snap["info"].get(code))
+            charts[code] = _chart_input(m, code, st, snap["inds"].get(code))
     sec = snap["sectors"]
     return {
         "asof": snap["asof"],
@@ -130,4 +157,5 @@ def collect(db_path: str) -> dict[str, Any]:
         "stocks": stocks,
         "daily": _daily(con, sessions),
         "events": _events(con, snap["asof"]),
+        "charts": charts,
     }

@@ -84,6 +84,38 @@ def chips(s: dict, mfi: float | None) -> list[dict]:
     return [c for c in parts if c is not None]
 
 
+RSI_LEVELS = (70.0, 50.0, 30.0)
+
+
+def _direction(values) -> str | None:
+    """"rising" / "falling" / "flat" from the last two non-missing values, or None."""
+    vals = [v for v in (values or [])[-2:] if v is not None]
+    if len(vals) < 2:
+        return None
+    return "rising" if vals[1] > vals[0] else "falling" if vals[1] < vals[0] else "flat"
+
+
+def _rsi_band(rsi: float | None) -> str | None:
+    """Where RSI sits against 30 / 50 / 70: ">70", ">50", "<50" or "<30" (50 itself counts as ">50")."""
+    if rsi is None:
+        return None
+    hi, mid, lo = RSI_LEVELS
+    return ">70" if rsi > hi else ">50" if rsi >= mid else "<30" if rsi < lo else "<50"
+
+
+def state(s: dict) -> dict:
+    """The one-line reading under a signal row: P&F column, MACD vs zero and its histogram's direction (vs the
+    previous session), RSI band and direction (vs the previous session)."""
+    line = _last([v for v in (s.get("macd") or []) if v is not None])
+    rsi_vals = s.get("rsi") or []
+    rsi = _last([v for v in rsi_vals if v is not None])
+    return {"column": s.get("column") if s.get("column") in ("X", "O") else None,
+            "macd": None if line is None else ("above" if line > 0 else "below"),
+            "macd_dir": _direction(s.get("macd_hist")),
+            "rsi": round(rsi, 1) if rsi is not None else None, "rsi_band": _rsi_band(rsi),
+            "rsi_dir": _direction(rsi_vals)}
+
+
 def _item(s: dict, chg: float | None) -> dict:
     mfi = _mfi(s)
     rvol = s.get("vol_ratio")
@@ -92,7 +124,7 @@ def _item(s: dict, chg: float | None) -> dict:
         "chg_pct": chg, "pattern": s.get("pattern"), "signal_date": s.get("signal_date"),
         "target": s.get("target") or None, "stop": s.get("stop"),
         "rvol": round(rvol, 2) if rvol is not None else None, "mfi": mfi,
-        "chips": chips(s, mfi), "pf_cols": [list(c) for c in (s.get("pf") or {}).get("cols", [])],
+        "chips": chips(s, mfi), "state": state(s), "pf_cols": [list(c) for c in (s.get("pf") or {}).get("cols", [])],
     }
 
 

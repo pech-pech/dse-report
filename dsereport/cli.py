@@ -16,7 +16,7 @@ import sqlite3
 import sys
 import tempfile
 
-from . import build, schema
+from . import build, charts, schema
 
 KEEP_REPORTS = 60
 
@@ -62,11 +62,33 @@ def _write(report: dict, out: str) -> str:
 
 
 def _prune(v1: str, keep: set) -> None:
-    """Dated reports drop out of the site when they drop out of the index."""
+    """Dated reports, and their chart folders, drop out of the site when they drop out of the index."""
     for name in os.listdir(v1):
         stem, ext = os.path.splitext(name)
         if ext == ".json" and len(stem) == 10 and stem[4] == "-" and stem not in keep:
             os.remove(os.path.join(v1, name))
+    chart_dir = os.path.join(v1, "charts")
+    for name in os.listdir(chart_dir) if os.path.isdir(chart_dir) else []:
+        if len(name) == 10 and name[4] == "-" and name not in keep:
+            shutil.rmtree(os.path.join(chart_dir, name), ignore_errors=True)
+
+
+def _write_charts(files: dict, asof: str, out: str) -> int:
+    """One file per stock under v1/charts/<asof>/, written before the report that points at them."""
+    folder = os.path.join(out, "v1", "charts", asof)
+    os.makedirs(folder, exist_ok=True)
+    for code, chart in files.items():
+        with open(os.path.join(folder, f"{code}.json"), "w", encoding="utf-8") as f:
+            f.write(json.dumps(chart, ensure_ascii=False, separators=(",", ":")))
+    return len(files)
+
+
+def _charts_for(I: dict, report: dict) -> tuple[dict, list]:
+    """The chart files for the codes the report names, and every problem found in them."""
+    if not I.get("charts"):
+        return {}, []
+    files = charts.build_charts(I, report)
+    return files, [e for c in files.values() for e in charts.validate_chart(c)]
 
 
 def _published_asof(out: str):
@@ -88,12 +110,15 @@ def cmd_build(args) -> int:
         from . import papers
         feed = papers.fetch()
     report = build.build_report(I, feed)
-    errors = schema.validate(report)
+    files, chart_errors = _charts_for(I, report)
+    report["charts"] = {"path": f"charts/{report['asOf']}/", "codes": sorted(files)}
+    errors = schema.validate(report) + chart_errors
     if errors:
         print("Report not written; it failed validation:", *errors[:20], sep="\n  ", file=sys.stderr)
         return 1
+    n = _write_charts(files, report["asOf"], args.out)
     path = _write(report, args.out)
-    print(f"Wrote {path} for {report['asOf']} ({os.path.getsize(path) // 1024} KB)")
+    print(f"Wrote {path} for {report['asOf']} ({os.path.getsize(path) // 1024} KB) and {n} stock charts")
     return 0
 
 
