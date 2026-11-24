@@ -771,6 +771,11 @@ function mutated() {
     assert.ok(/Col X · MACD above 0\u00a0↑ · RSI\u00a0>70\u00a0↓/.test(text), "state line in the signals sheet");
     assert.ok(/Tk [\d,.]+ · Col X/.test(text), "price leads the line");
     assertClean(text, "signals sheet with state");
+    const n = r.sheet.querySelectorAll(".state").length;
+    assert.strictEqual(n, 1, "a row without readings gets no bare price line");
+    const old = await runApp({ report: FIXTURE, meta: { savedAt: "2026-11-18T15:48:00+06:00", offline: false, error: null }, store: { "dser-period": "day" } });
+    old.api.openSheet(4);
+    assert.strictEqual(old.sheet.querySelectorAll(".state").length, 0, "an older report shows no state lines");
   });
   await test("a chart without pf shows the other sections; nulls and junk render clean", async () => {
     const noPf = Object.assign(copy(CHART), { pf: null });

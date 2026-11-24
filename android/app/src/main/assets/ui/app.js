@@ -281,8 +281,9 @@
     const st = obj(q.state), dir = d => DIR_ARROW[str(d)] || "";
     const macd = ["above", "below"].includes(st.macd) ? `MACD ${st.macd} 0${dir(st.macd_dir)}` : "";
     const rsi = [">70", ">50", "<50", "<30"].includes(st.rsi_band) ? `RSI\u00a0${st.rsi_band}${dir(st.rsi_dir)}` : "";
-    return [isNum(q.close) ? "Tk " + num(q.close) : "", ["X", "O"].includes(st.column) ? "Col " + st.column : "", macd, rsi]
-      .filter(Boolean).join(" · ");
+    const col = ["X", "O"].includes(st.column) ? "Col " + st.column : "";
+    if (!col && !macd && !rsi) return "";   // an older report without readings: no bare price line
+    return [isNum(q.close) ? "Tk " + num(q.close) : "", col, macd, rsi].filter(Boolean).join(" · ");
   }
   function stateLine(q) {
     const t = stateText(q);
