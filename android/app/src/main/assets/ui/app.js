@@ -303,13 +303,14 @@
   }
 
   // ---------- shared rows ----------
-  // "163.3 · Col X · MACD above ↑ · RSI >70 ↑": the row's reading (MACD above/below 0) in one muted line (parts without data drop out)
+  // "163.3 · Col X · MACD above ↑ · RSI >70 ↑ · MFI >80 ↑": the row's reading (MACD above/below 0) in one muted line (parts without data drop out)
   const DIR_ARROW = { rising: "\u00a0↑", falling: "\u00a0↓", flat: "\u00a0→" };   // no-break: an arrow never wraps alone
   function stateText(q) {
     const st = obj(q.state), dir = d => DIR_ARROW[str(d)] || "";
     const macd = ["above", "below"].includes(st.macd) ? `MACD ${st.macd}${dir(st.macd_dir)}` : "";
     const rsi = [">70", ">50", "<50", "<30"].includes(st.rsi_band) ? `RSI\u00a0${st.rsi_band}${dir(st.rsi_dir)}` : "";
-    return [isNum(q.close) ? num(q.close) : "", ["X", "O"].includes(st.column) ? "Col " + st.column : "", macd, rsi]
+    const mfi = [">80", ">50", "<50", "<20"].includes(st.mfi_band) ? `MFI\u00a0${st.mfi_band}${dir(st.mfi_dir)}` : "";
+    return [isNum(q.close) ? num(q.close) : "", ["X", "O"].includes(st.column) ? "Col " + st.column : "", macd, rsi, mfi]
       .filter(Boolean).join(" · ");
   }
   function stateLine(q) {

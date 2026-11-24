@@ -763,12 +763,12 @@ function mutated() {
     const lists = report.periods.day.signals;
     const k = ["buys", "sells", "beating", "volume"].find(n => (lists[n] || []).length);
     assert.ok(k, "fixture has a signal row");
-    lists[k][0].state = { column: "X", macd: "above", macd_dir: "rising", rsi: 72.4, rsi_band: ">70", rsi_dir: "falling" };
-    if (lists[k][1]) lists[k][1].state = { column: null, macd: null, macd_dir: null, rsi: null, rsi_band: "junk", rsi_dir: null };
+    lists[k][0].state = { column: "X", macd: "above", macd_dir: "rising", rsi: 72.4, rsi_band: ">70", rsi_dir: "falling", mfi: 84.0, mfi_band: ">80", mfi_dir: "rising" };
+    if (lists[k][1]) lists[k][1].state = { column: null, macd: null, macd_dir: null, rsi: null, rsi_band: "junk", rsi_dir: null, mfi_band: ">70", mfi_dir: "up" };
     const r = await runApp({ report, meta: { savedAt: "2026-11-18T15:48:00+06:00", offline: false, error: null }, store: { "dser-period": "day" } });
     r.api.openSheet(4);
     const text = allText(r.sheet, r.walk);
-    assert.ok(/Col X · MACD above\u00a0↑ · RSI\u00a0>70\u00a0↓/.test(text), "state line in the signals sheet");
+    assert.ok(/Col X · MACD above\u00a0↑ · RSI\u00a0>70\u00a0↓ · MFI\u00a0>80\u00a0↑/.test(text), "state line in the signals sheet");
     assert.ok(/(^|[^\d,.])[\d,.]+ · Col X/.test(text), "price leads the line");
     assertClean(text, "signals sheet with state");
   });
