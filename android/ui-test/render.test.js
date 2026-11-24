@@ -768,10 +768,40 @@ function mutated() {
     const r = await runApp({ report, meta: { savedAt: "2026-11-18T15:48:00+06:00", offline: false, error: null }, store: { "dser-period": "day" } });
     r.api.openSheet(4);
     const text = allText(r.sheet, r.walk);
-    assert.ok(/Col X · MACD above 0\u00a0↑ · RSI\u00a0>70\u00a0↓/.test(text), "state line in the signals sheet");
-    assert.ok(/Tk [\d,.]+ · Col X/.test(text), "price leads the line");
+    assert.ok(/Col X · MACD above\u00a0↑ · RSI\u00a0>70\u00a0↓/.test(text), "state line in the signals sheet");
+    assert.ok(/(^|[^\d,.])[\d,.]+ · Col X/.test(text), "price leads the line");
     assertClean(text, "signals sheet with state");
   });
+  await test("sheet P&F sketch: one box per row across box-size changes; reversals one box past; trigger one box up", async () => {
+    // PREMIERBAN 24 Nov: box 0.25 below 5, 0.5 from 5 (the O column 4.0-7.5 spans both sizes)
+    const report = JSON.parse(JSON.stringify(FIXTURE));
+    report.setups[0].pf_cols = [["X", 7.0, 8.0, 3], ["O", 4.0, 7.5, 10], ["X", 4.25, 5.5, 5], ["O", 4.0, 5.0, 5], ["X", 4.25, 6.0, 6], ["O", 4.0, 5.5, 6], ["X", 4.25, 6.0, 6]];
+    report.setups[0].trigger = 6.5;
+    const r = await runApp({ report });
+    r.api.openSheet(5);
+    const svg = nSheet(r).querySelectorAll("svg").find(e => (e.getAttribute("aria-label") || "").startsWith("Point and figure"));
+    assert.ok(svg, "sketch drawn");
+    const colsY = new Map();
+    svg.querySelectorAll("path, circle").forEach(m => {
+      const d = m.getAttribute("d"), xy = d ? d.slice(1).split("L")[0].split(",").map(Number) : null;
+      const cx = d ? null : Number(m.getAttribute("cx")), cy = d ? null : Number(m.getAttribute("cy"));
+      const r0 = d ? (Number(d.split("L")[1].split("M")[0].split(",")[0]) - xy[0]) / 2 : 0;
+      const key = (d ? xy[0] + r0 : cx).toFixed(1), y = d ? xy[1] + r0 : cy;
+      colsY.set(key, [...(colsY.get(key) || []), y]);
+    });
+    const cols = [...colsY.values()].map(ys => ys.sort((a, b) => a - b));
+    assert.deepStrictEqual(cols.map(c => c.length), [3, 10, 5, 5, 6, 6, 6], "marks per column = boxes");
+    const cell = cols[0][1] - cols[0][0];
+    cols.forEach((c, i) => c.slice(1).forEach((y, k) => assert.ok(Math.abs(y - c[k] - cell) < 0.2, `column ${i + 1}: even rows`)));
+    const top = c => c[0], bottom = c => c[c.length - 1];
+    for (let i = 1; i < cols.length; i++) {
+      if (i % 2) assert.ok(Math.abs(top(cols[i]) - top(cols[i - 1]) - cell) < 0.2, `O ${i + 1} starts one box below the X top`);
+      else assert.ok(Math.abs(bottom(cols[i - 1]) - bottom(cols[i]) - cell) < 0.2, `X ${i + 1} starts one box above the O bottom`);
+    }
+    const line = svg.querySelector("line"), ty = Number(line.getAttribute("y1"));
+    assert.ok(Math.abs(top(cols[6]) - ty - cell) < 0.2, "trigger 6.5 one box above the last X top 6.0");
+  });
+
   await test("a chart without pf shows the other sections; nulls and junk render clean", async () => {
     const noPf = Object.assign(copy(CHART), { pf: null });
     let r = await runApp({ report: withCharts(FIXTURE), charts: serveChart(noPf) });
