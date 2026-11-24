@@ -310,8 +310,9 @@
     const macd = ["above", "below"].includes(st.macd) ? `MACD ${st.macd}${dir(st.macd_dir)}` : "";
     const rsi = [">70", ">50", "<50", "<30"].includes(st.rsi_band) ? `RSI\u00a0${st.rsi_band}${dir(st.rsi_dir)}` : "";
     const mfi = [">80", ">50", "<50", "<20"].includes(st.mfi_band) ? `MFI\u00a0${st.mfi_band}${dir(st.mfi_dir)}` : "";
-    return [isNum(q.close) ? num(q.close) : "", ["X", "O"].includes(st.column) ? "Col " + st.column : "", macd, rsi, mfi]
-      .filter(Boolean).join(" · ");
+    const col = ["X", "O"].includes(st.column) ? "Col " + st.column : "";
+    if (!col && !macd && !rsi && !mfi) return "";   // an older report without readings: no bare price line
+    return [isNum(q.close) ? num(q.close) : "", col, macd, rsi, mfi].filter(Boolean).join(" · ");
   }
   function stateLine(q) {
     const t = stateText(q);
