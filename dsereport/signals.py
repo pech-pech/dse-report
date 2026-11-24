@@ -28,11 +28,15 @@ def period_change(dates: list[str], closes: list[float], base: str | None) -> fl
     return round((closes[-1] / then - 1) * 100, 2)
 
 
-def _mfi(s: dict) -> float | None:
+def _mfi_series(s: dict) -> list:
     try:
-        v = _last(ind.mfi(s["high"], s["low"], s["close"], s["volume"], MFI_PERIOD))
+        return list(ind.mfi(s["high"], s["low"], s["close"], s["volume"], MFI_PERIOD))
     except (KeyError, TypeError, ZeroDivisionError):
-        return None
+        return []
+
+
+def _mfi(s: dict) -> float | None:
+    v = _last(_mfi_series(s))
     return round(v, 1) if v is not None else None
 
 
@@ -85,6 +89,7 @@ def chips(s: dict, mfi: float | None) -> list[dict]:
 
 
 RSI_LEVELS = (70.0, 50.0, 30.0)
+MFI_LEVELS = (MFI_HIGH, 50.0, MFI_LOW)
 
 
 def _direction(values) -> str | None:
@@ -95,25 +100,38 @@ def _direction(values) -> str | None:
     return "rising" if vals[1] > vals[0] else "falling" if vals[1] < vals[0] else "flat"
 
 
-def _rsi_band(rsi: float | None) -> str | None:
-    """Where RSI sits against 30 / 50 / 70: ">70", ">50", "<50" or "<30" (50 itself counts as ">50")."""
-    if rsi is None:
+def _band(v: float | None, levels: tuple) -> str | None:
+    """Where v sits against (high, mid, low): ">high", ">mid", "<mid" or "<low" (mid itself counts as ">mid")."""
+    if v is None:
         return None
-    hi, mid, lo = RSI_LEVELS
-    return ">70" if rsi > hi else ">50" if rsi >= mid else "<30" if rsi < lo else "<50"
+    hi, mid, lo = (f"{x:g}" for x in levels)
+    return f">{hi}" if v > levels[0] else f">{mid}" if v >= levels[1] else f"<{lo}" if v < levels[2] else f"<{mid}"
+
+
+def _rsi_band(rsi: float | None) -> str | None:
+    """Where RSI sits against 30 / 50 / 70: ">70", ">50", "<50" or "<30"."""
+    return _band(rsi, RSI_LEVELS)
+
+
+def _mfi_band(mfi: float | None) -> str | None:
+    """Where MFI sits against 20 / 50 / 80: ">80", ">50", "<50" or "<20"."""
+    return _band(mfi, MFI_LEVELS)
 
 
 def state(s: dict) -> dict:
     """The one-line reading under a signal row: P&F column, MACD vs zero and its histogram's direction (vs the
-    previous session), RSI band and direction (vs the previous session)."""
+    previous session), RSI and MFI bands and directions (vs the previous session)."""
     line = _last([v for v in (s.get("macd") or []) if v is not None])
     rsi_vals = s.get("rsi") or []
     rsi = _last([v for v in rsi_vals if v is not None])
+    mfi_vals = _mfi_series(s)
+    mfi = _last([v for v in mfi_vals if v is not None])
     return {"column": s.get("column") if s.get("column") in ("X", "O") else None,
             "macd": None if line is None else ("above" if line > 0 else "below"),
             "macd_dir": _direction(s.get("macd_hist")),
             "rsi": round(rsi, 1) if rsi is not None else None, "rsi_band": _rsi_band(rsi),
-            "rsi_dir": _direction(rsi_vals)}
+            "rsi_dir": _direction(rsi_vals),
+            "mfi": round(mfi, 1) if mfi is not None else None, "mfi_band": _mfi_band(mfi), "mfi_dir": _direction(mfi_vals)}
 
 
 def _item(s: dict, chg: float | None) -> dict:

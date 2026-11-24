@@ -246,22 +246,50 @@
         s("text", { x: q.left.toFixed(1), y: ROWS[q.row], "text-anchor": "start", class: "tx-lad tx-" + q.c }, q.text)]));
   }
 
+  // Box rows of the report's [dir, lo, hi, boxes] columns. Box sizes change with price, so rows come from the P&F
+  // rule, not from prices: a reversal starts one box past the previous column's extreme (an O one below the X top,
+  // an X one above the O bottom). Two same-direction columns in a row (never on a real page) restart at the same base.
+  function pfRows(c) {
+    let lo = 0, hi = 0;
+    return c.map((q, i) => {
+      const n = Math.round(q[3]), prev = c[i - 1];
+      if (prev && prev[0] !== q[0]) {
+        if (q[0] === "O") { hi = hi - 1; lo = hi - n + 1; } else { lo = lo + 1; hi = lo + n - 1; }
+      } else { hi = lo + n - 1; }
+      return { d: q[0], lo, hi, plo: q[1], phi: q[2] };
+    });
+  }
+  // the row of a price on those columns: an exact column end, else between the nearest known rows, else past an end
+  function pfRowOf(rows, v) {
+    if (!isNum(v)) return null;
+    const known = [...new Map(rows.flatMap(r => [[r.lo, r.plo], [r.hi, r.phi]])).entries()].sort((a, b) => a[0] - b[0]);
+    const hit = known.find(k => Math.abs(k[1] - v) < 1e-6);
+    if (hit) return hit[0];
+    const below = known.filter(k => k[1] < v).pop(), above = known.find(k => k[1] > v);
+    const step = (a, b) => (b[1] - a[1]) / ((b[0] - a[0]) || 1) || 1;
+    if (below && above) return below[0] + Math.round((v - below[1]) / step(below, above));
+    const [a, b] = below ? known.slice(-2) : known.slice(0, 2);
+    if (!b) return a[0] + Math.sign(v - a[1]);
+    return below ? b[0] + Math.max(1, Math.round((v - b[1]) / step(a, b))) : a[0] - Math.max(1, Math.round((a[1] - v) / step(a, b)));
+  }
   function pfSketch(cols, trigger) {
-    const c = arr(cols).filter(q => Array.isArray(q) && (q[0] === "X" || q[0] === "O") && isNum(q[1]) && isNum(q[2]) && isNum(q[3]) && q[3] >= 1);
+    const c = arr(cols).filter(q => Array.isArray(q) && (q[0] === "X" || q[0] === "O") && isNum(q[1]) && isNum(q[2]) && isNum(q[3]) && q[3] >= 1)
+      .map(q => [q[0], q[1], q[2], Math.min(MAX_PF_BOXES, Math.round(q[3]))]);
     if (!c.length) return null;
-    const ex = extent(c.map(q => q[1]), c.map(q => q[2]), [trigger]);
-    const W = 320, H = 96, cw = Math.min(22, (W - 50) / c.length), pad = (ex[1] - ex[0]) * 0.08 || 1;
-    const lo = ex[0] - pad, hi = ex[1] + pad, y = v => 4 + (1 - (v - lo) / (hi - lo)) * (H - 8);
-    const marks = c.map((q, i) => {
-      const boxes = Math.min(MAX_PF_BOXES, Math.round(q[3])), step = boxes > 1 ? (q[2] - q[1]) / (boxes - 1) : 0, cx = 8 + i * cw + cw / 2, r = Math.min(cw * 0.32, ((H - 8) / ((hi - lo) / (step || 1))) * 0.4, 6);
-      return Array.from({ length: boxes }, (_, b) => { const cy = y(q[1] + b * step);
-        return q[0] === "X" ? s("path", { d: `M${(cx - r).toFixed(1)},${(cy - r).toFixed(1)}L${(cx + r).toFixed(1)},${(cy + r).toFixed(1)}M${(cx + r).toFixed(1)},${(cy - r).toFixed(1)}L${(cx - r).toFixed(1)},${(cy + r).toFixed(1)}`, class: "ln-up" })
+    const rows = pfRows(c), tRow = pfRowOf(rows, trigger);
+    const rlo = Math.min(...rows.map(r => r.lo), tRow ?? Infinity) - 1, rhi = Math.max(...rows.map(r => r.hi), tRow ?? -Infinity) + 1;
+    const W = 320, cell = Math.min(22, (W - 50) / c.length, 120 / (rhi - rlo + 1)), H = (rhi - rlo + 1) * cell + 8;
+    const y = b => 4 + (rhi - b) * cell + cell / 2, r = Math.min(cell * 0.36, 6);
+    const marks = rows.map((q, i) => {
+      const cx = 8 + i * cell + cell / 2;
+      return Array.from({ length: q.hi - q.lo + 1 }, (_, b) => { const cy = y(q.lo + b);
+        return q.d === "X" ? s("path", { d: `M${(cx - r).toFixed(1)},${(cy - r).toFixed(1)}L${(cx + r).toFixed(1)},${(cy + r).toFixed(1)}M${(cx + r).toFixed(1)},${(cy - r).toFixed(1)}L${(cx - r).toFixed(1)},${(cy + r).toFixed(1)}`, class: "ln-up" })
           : s("circle", { cx: cx.toFixed(1), cy: cy.toFixed(1), r: r.toFixed(1), class: "ln-down nofill" }); });
     });
-    return s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", class: "chart",
+    return s("svg", { viewBox: `0 0 ${W} ${H.toFixed(1)}`, width: "100%", role: "img", class: "chart",
       "aria-label": `Point and figure, last ${c.length} columns` + (isNum(trigger) ? `; buy trigger ${num(trigger)}` : "") },
-      isNum(trigger) ? [s("line", { x1: 0, x2: W - 44, y1: y(trigger).toFixed(1), y2: y(trigger).toFixed(1), class: "ln-acc dash" }),
-        s("text", { x: W - 40, y: (y(trigger) + 3).toFixed(1), class: "tx-acc tx-end" }, "Trigger")] : null, marks);
+      tRow !== null ? [s("line", { x1: 0, x2: W - 44, y1: y(tRow).toFixed(1), y2: y(tRow).toFixed(1), class: "ln-acc dash" }),
+        s("text", { x: W - 40, y: (y(tRow) + 3).toFixed(1), class: "tx-acc tx-end" }, "Trigger")] : null, marks);
   }
 
   function bpStrip(bp) {
@@ -275,15 +303,16 @@
   }
 
   // ---------- shared rows ----------
-  // "Tk 163.3 · Col X · MACD above 0 ↑ · RSI >70 ↑": the row's reading in one muted line (parts without data drop out)
+  // "163.3 · Col X · MACD above ↑ · RSI >70 ↑ · MFI >80 ↑": the row's reading (MACD above/below 0) in one muted line (parts without data drop out)
   const DIR_ARROW = { rising: "\u00a0↑", falling: "\u00a0↓", flat: "\u00a0→" };   // no-break: an arrow never wraps alone
   function stateText(q) {
     const st = obj(q.state), dir = d => DIR_ARROW[str(d)] || "";
-    const macd = ["above", "below"].includes(st.macd) ? `MACD ${st.macd} 0${dir(st.macd_dir)}` : "";
+    const macd = ["above", "below"].includes(st.macd) ? `MACD ${st.macd}${dir(st.macd_dir)}` : "";
     const rsi = [">70", ">50", "<50", "<30"].includes(st.rsi_band) ? `RSI\u00a0${st.rsi_band}${dir(st.rsi_dir)}` : "";
+    const mfi = [">80", ">50", "<50", "<20"].includes(st.mfi_band) ? `MFI\u00a0${st.mfi_band}${dir(st.mfi_dir)}` : "";
     const col = ["X", "O"].includes(st.column) ? "Col " + st.column : "";
-    if (!col && !macd && !rsi) return "";   // an older report without readings: no bare price line
-    return [isNum(q.close) ? "Tk " + num(q.close) : "", col, macd, rsi].filter(Boolean).join(" · ");
+    if (!col && !macd && !rsi && !mfi) return "";   // an older report without readings: no bare price line
+    return [isNum(q.close) ? num(q.close) : "", col, macd, rsi, mfi].filter(Boolean).join(" · ");
   }
   function stateLine(q) {
     const t = stateText(q);

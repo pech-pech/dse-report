@@ -219,8 +219,9 @@ def test_real_fixture_shape_and_sanity(real, period):
 def test_state_reads_column_macd_and_rsi():
     s = _stock("AAA", column="X", macd=[0.2] * (N - 1) + [0.4], macd_hist=[0.1] * (N - 1) + [0.3],
                rsi=[55.0] * (N - 1) + [72.0])
-    assert S.state(s) == {"column": "X", "macd": "above", "macd_dir": "rising", "rsi": 72.0,
-                          "rsi_band": ">70", "rsi_dir": "rising"}
+    st = S.state(s)
+    assert {k: st[k] for k in ("column", "macd", "macd_dir", "rsi", "rsi_band", "rsi_dir")} == {
+        "column": "X", "macd": "above", "macd_dir": "rising", "rsi": 72.0, "rsi_band": ">70", "rsi_dir": "rising"}
 
 
 def test_state_falling_below_and_bands():
@@ -231,14 +232,27 @@ def test_state_falling_below_and_bands():
     assert S._direction([1.0, 1.0]) == "flat"
 
 
+def test_state_reads_mfi_band_and_direction():
+    # money flows in on the last two sessions: MFI ends high and rising
+    close = [100.0 - (i % 2) for i in range(N - 2)] + [104.0, 110.0]
+    s = _stock("AAA", close=close, high=[c + 1 for c in close], low=[c - 1 for c in close],
+               volume=[1000.0] * (N - 2) + [5000.0, 9000.0])
+    st = S.state(s)
+    assert st["mfi"] is not None and st["mfi_band"] in (">80", ">50") and st["mfi_dir"] == "rising"
+    assert st["mfi"] == S._mfi(s)
+    assert [S._mfi_band(v) for v in (80.1, 80.0, 50.0, 49.9, 20.0, 19.9, None)] == [">80", ">50", ">50", "<50", "<50", "<20", None]
+
+
 def test_state_with_missing_data_is_all_none():
     s = _stock("AAA", column=None, macd=[], macd_hist=[None], rsi=[None, None])
+    s.pop("volume")
     assert S.state(s) == {"column": None, "macd": None, "macd_dir": None, "rsi": None, "rsi_band": None,
-                          "rsi_dir": None}
+                          "rsi_dir": None, "mfi": None, "mfi_band": None, "mfi_dir": None}
 
 
 def test_signal_items_carry_state():
     I = json.loads(FIXTURE.read_text())
     out = S.signal_lists(I, "week")
     items = [it for k in S.LISTS for it in out[k]]
-    assert items and all(set(it["state"]) == {"column", "macd", "macd_dir", "rsi", "rsi_band", "rsi_dir"} for it in items)
+    assert items and all(set(it["state"]) == {"column", "macd", "macd_dir", "rsi", "rsi_band", "rsi_dir",
+                                                    "mfi", "mfi_band", "mfi_dir"} for it in items)
