@@ -275,11 +275,26 @@
   }
 
   // ---------- shared rows ----------
+  // "Tk 163.3 · Col X · MACD above 0 ↑ · RSI >70 ↑": the row's reading in one muted line (parts without data drop out)
+  const DIR_ARROW = { rising: "\u00a0↑", falling: "\u00a0↓", flat: "\u00a0→" };   // no-break: an arrow never wraps alone
+  function stateText(q) {
+    const st = obj(q.state), dir = d => DIR_ARROW[str(d)] || "";
+    const macd = ["above", "below"].includes(st.macd) ? `MACD ${st.macd} 0${dir(st.macd_dir)}` : "";
+    const rsi = [">70", ">50", "<50", "<30"].includes(st.rsi_band) ? `RSI\u00a0${st.rsi_band}${dir(st.rsi_dir)}` : "";
+    const col = ["X", "O"].includes(st.column) ? "Col " + st.column : "";
+    if (!col && !macd && !rsi) return "";   // an older report without readings: no bare price line
+    return [isNum(q.close) ? "Tk " + num(q.close) : "", col, macd, rsi].filter(Boolean).join(" · ");
+  }
+  function stateLine(q) {
+    const t = stateText(q);
+    return t ? h("div", { class: "small muted state" }, t) : null;
+  }
   function stockRow(it, kind) {
     const q = obj(it);
     return h("div", null,
       h("div", { class: "row" }, h("span", null, h("span", { class: "code" }, str(q.code)), " ", h("span", { class: "small muted" }, str(q.sector))),
         h("span", { class: "mono small " + toneOf(q.chg_pct) }, num(q.close) + " " + pct(q.chg_pct))),
+      stateLine(q),
       h("div", { class: "chips" }, chip(str(q.pattern), kind === "sell" ? "down" : kind === "buy" ? "up" : ""),
         isNum(q.target) ? chip("target " + num(q.target)) : null, isNum(q.stop) ? chip("stop " + num(q.stop)) : null,
         isNum(q.rvol) ? chip("RVOL " + num(q.rvol) + "×") : null, arr(q.chips).map(c => chip(str(obj(c).text), toneWord(obj(c).tone)))));
@@ -448,7 +463,7 @@
     const gradeChip = () => (str(v.grade) ? chip(`Grade ${str(v.grade)} · ${str(v.confidence) || DASH} confidence`, GRADE_TONE[v.grade] || "") : null);
     const condList = () => (conds.length ? [h4(`The ${conds.length} ${plural(conds.length, "condition")}`),
       ul(conds.map(c => [h("b", { class: c.met === true ? "up" : "muted" }, c.met === true ? `✓ ${str(c.label)}. ` : `✗ ${str(c.label)} (not met). `), str(c.help)]))] : null);
-    return { kick: `Watch · ${i + 1} of ${n}`, title: `${str(st.code) || "Setup"}: one box from a P&F buy at ${num(st.trigger)}`, periodFree: true,
+    return { kick: `Watch · ${i + 1} of ${n}`, title: `${str(st.code) || "Setup"}: one box from a P&F buy at ${num(st.trigger)}`, code: str(st.code), periodFree: true,
       front: () => [h("div", { class: `card stack${str(st.caution) ? " cautious" : ""}` }, h("div", { class: "row" }, h("span", { class: "small muted" }, str(st.sector)), scoreChip()), gradeChip(), ladder(st), values(), check()),
         caution(), para(reasons[0])],
       // With a view, its Plan tiles replace the values and reasoning; the chart detail stays below it.
@@ -526,7 +541,7 @@
   }
 
   // ---------- app state and shell ----------
-  const state = { report: null, meta: null, period: "day", index: 0, cards: [], els: {}, hold: null, sheetIndex: -1, lastFocus: null };
+  const state = { report: null, meta: null, period: "day", index: 0, cards: [], els: {}, hold: null, sheetIndex: -1, lastFocus: null, chart: null };
 
   function storeGet(k) { try { return root.localStorage ? root.localStorage.getItem(k) : null; } catch (e) { return null; } }
   function storeSet(k, v) { try { if (root.localStorage) root.localStorage.setItem(k, v); } catch (e) { /* storage off: keep the default */ } }
@@ -549,7 +564,8 @@
     E.sheet = h("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-labelledby": "sheetTitle" }, E.grab,
       h("div", { class: "head" }, h("div", null, E.sheetKick, E.sheetTitle), E.sheetClose), E.sheetBody);
     E.sheet.hidden = true;
-    const app = h("div", { class: "app" }, E.prog, h("header", { class: "top" }, h("div", null, E.date, E.saved), E.seg), E.offbar, E.track, E.hint, E.scrim, E.sheet);
+    buildChartLayer();
+    const app = h("div", { class: "app" }, E.prog, h("header", { class: "top" }, h("div", null, E.date, E.saved), E.seg), E.offbar, E.track, E.hint, E.scrim, E.sheet, E.chart);
     const host = document.getElementById("app") || document.body;
     host.replaceChildren(app);
     wireEvents();
@@ -581,9 +597,10 @@
     E.date.textContent = "DSE Report" + (dayLabel(r.asOf) ? " · " + dayLabel(r.asOf) : "");
     Array.prototype.forEach.call(E.seg.children, b => b.setAttribute("aria-pressed", String(b.getAttribute("data-period") === state.period)));
     E.track.replaceChildren(...defs.map((c, i) => h("section", { class: "pg", "aria-roledescription": "card", "aria-label": `${i + 1} of ${defs.length}: ${c.kick}`, "data-i": i },
-      h("article", { class: "cardx", "data-i": i }, h("span", { class: "ring" }), h("div", { class: "kick" }, c.kick), h("h2", null, c.title), c.front(),
+      h("article", { class: "cardx", "data-i": i }, h("span", { class: "ring" }), h("div", { class: "kick" }, c.kick), h("h2", null, titleNodes(c)), c.front(),
         h("div", { class: "foot" }, h("span", null, `${i + 1} of ${defs.length}` + (c.periodFree ? " · same for every period" : "")), h("span", { class: "hold" }, "Hold for the full story"))))));
     E.prog.replaceChildren(...defs.map(() => h("i")));
+    linkCodes(E.track);
     setIndex(state.index);
     E.track.scrollLeft = state.index * (E.track.clientWidth || 0);
   }
@@ -623,12 +640,13 @@
     const E = state.els, c = state.cards[i];
     if (!c) return false;
     E.sheetKick.textContent = c.kick;
-    E.sheetTitle.textContent = c.title;
+    E.sheetTitle.replaceChildren(...[].concat(titleNodes(c)));
     // A card with a view leads with the write-up and keeps its own detail below a divider; without one, the
     // card's sheet as before, with the answers' Why? list.
     const vb = c.view ? viewBlock(c.view(), c.viewTitle) : null;
     E.sheetBody.replaceChildren(vb ? h("div", { class: "stack" }, vb, h("hr", { class: "divider" }), c.back())
       : h("div", { class: "stack" }, c.back(), whyBlock(c.why ? c.why() : [])));
+    linkCodes(E.sheet);
     E.sheetBody.scrollTop = 0;
     return true;
   }
@@ -650,6 +668,331 @@
     setTimeout(() => { if (state.sheetIndex < 0) { E.scrim.hidden = true; E.sheet.hidden = true; } }, SHEET_CLOSE_MS);
     if (state.lastFocus && state.lastFocus.focus) state.lastFocus.focus();
     return true;
+  }
+
+  // ---------- chart screen: P&F, RSI 14, MACD 12/26/9 for one stock, as of the report (GET /charts/<asOf>/<CODE>.json) ----------
+  const CHART_PATH = "/charts/";
+  const CHART_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const CHART_CODE_RE = /^[A-Z0-9][A-Z0-9._-]{0,19}$/;
+  const PF_START = 18, PF_MIN = 12, PF_MAX = 28, PF_STEP = 4, PF_FIT_MIN = 3;
+  const PF_PAD = 2, PF_LABEL_W = 44, PF_VIEW_REM = 22.5, PF_MARGIN = 2, PF_OPEN_GAP = 2, PF_MAX_EXTRA = 120, PF_MAX_COL = 400;
+  const PF_LABEL_EVERY = 5, PF_TAG_CLEAR = 10;
+  const IND_W = 320, IND_R = 32, RSI_H = 92, MACD_H = 108, MONTH_GAP = 22;
+  const CHART_TEXT = {
+    offline: "No connection. This chart hasn't been saved yet; it's saved the first time you open it online.",
+    missing: "This chart isn't available for this report.",
+    note: "Technical readings from the report's data, not advice. Saved with this report, so it opens offline.",
+  };
+  const isInt = v => Number.isInteger(v);
+  const shortDay = iso => { const d = parseDate(iso); return d ? `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}` : ""; };
+  // a price with the decimals it needs: 276 -> 276.0, 16.25 -> 16.25
+  const px = v => num(v, isNum(v) && Math.abs(v * 10 - Math.round(v * 10)) > 1e-6 ? 2 : 1);
+  function remPx() {
+    try { const f = parseFloat(root.getComputedStyle(document.documentElement).fontSize); return f > 0 ? f : 16; } catch (e) { return 16; }
+  }
+
+  function chartCodes() {
+    const c = obj(obj(state.report).charts);
+    return new Set(arr(c.codes).filter(x => typeof x === "string" && CHART_CODE_RE.test(x)));
+  }
+  function linkCodes(el) {
+    const codes = chartCodes();
+    if (!codes.size || !el) return;
+    el.querySelectorAll(".code").forEach(c => {
+      const code = c.textContent;
+      if (!codes.has(code)) return;
+      c.classList.add("link");
+      c.setAttribute("role", "button"); c.setAttribute("tabindex", "0");
+      c.setAttribute("aria-label", `Open charts for ${code}`); c.setAttribute("data-chart", code);
+    });
+  }
+  // a setup's title leads with its code: show that part as a .code so it can link
+  function titleNodes(c) {
+    const code = str(c.code), t = str(c.title);
+    return code && t.startsWith(code) ? [h("span", { class: "code" }, code), t.slice(code.length)] : t;
+  }
+  function openChartFrom(e) {
+    const a = e && e.target && e.target.closest ? e.target.closest(".link") : null;
+    if (!a || !a.getAttribute("data-chart")) return false;
+    if (e.preventDefault) e.preventDefault();
+    openChart(a.getAttribute("data-chart"), a);
+    return true;
+  }
+
+  function buildChartLayer() {
+    const E = state.els;
+    E.chartBack = h("button", { type: "button", class: "cs-back", "aria-label": "Back to the report" }, "←");
+    E.chartCode = h("b", { id: "chartCode" }); E.chartSector = h("span");
+    E.chartAsOf = h("span", { class: "asof" });
+    E.chartBody = h("div", { class: "cs-body" });
+    E.chart = h("div", { class: "chartscreen", role: "dialog", "aria-modal": "true", "aria-labelledby": "chartCode" },
+      h("div", { class: "cs-top" }, E.chartBack, h("div", { class: "cs-ttl" }, E.chartCode, E.chartSector), E.chartAsOf), E.chartBody);
+    E.chart.hidden = true;
+  }
+  function openChart(code, opener) {
+    const E = state.els, asOf = str(obj(state.report).asOf);
+    if (!state.report || !chartCodes().has(code)) return false;
+    if (state.hold) state.hold.cancel();
+    state.chart = { code, asOf, opener: opener || document.activeElement, token: {} };
+    E.chartCode.textContent = code; E.chartSector.textContent = "";
+    E.chartAsOf.textContent = dayLabel(asOf) ? "As of " + dayLabel(asOf) : ""; E.chartAsOf.hidden = !dayLabel(asOf);
+    E.chart.hidden = false; E.chart.scrollTop = 0;
+    if (E.chartBack.focus) E.chartBack.focus();
+    return loadChart();
+  }
+  function closeChart() {
+    const E = state.els, ch = state.chart;
+    if (!ch) return false;
+    state.chart = null;
+    E.chart.hidden = true; E.chartBody.replaceChildren();
+    if (ch.opener && ch.opener.focus) ch.opener.focus();
+    return true;
+  }
+  async function fetchChart(asOf, code) {
+    if (!CHART_DATE_RE.test(asOf) || !CHART_CODE_RE.test(code)) return { problem: "missing" };
+    let r;
+    try { r = await root.fetch(`${CHART_PATH}${asOf}/${code}.json`, { cache: "no-store" }); } catch (e) { return { problem: "offline" }; }
+    if (!r || r.status === 503) return { problem: "offline" };
+    if (!r.ok) return { problem: "missing" };
+    let c;
+    try { c = await r.json(); } catch (e) { return { problem: "missing" }; }
+    const o = obj(c);
+    return o.schema === SCHEMA && o.code === code && o.asOf === asOf ? { chart: o } : { problem: "missing" };
+  }
+  async function loadChart() {
+    const E = state.els, ch = state.chart, token = {};
+    ch.token = token;
+    E.chartBody.replaceChildren(h("div", { class: "cs-wait", "aria-busy": "true", "aria-label": "Loading the chart" }, h("div", { class: "skel" }), h("div", { class: "skel short" })));
+    const res = await fetchChart(ch.asOf, ch.code);
+    if (state.chart !== ch || ch.token !== token) return false;   // closed, or another chart opened, while it loaded
+    if (!res.chart) { E.chartBody.replaceChildren(...chartProblem(res.problem)); return false; }
+    E.chartSector.textContent = str(res.chart.sector);
+    const parts = chartView(res.chart);
+    E.chartBody.replaceChildren(...parts.map(p => (p && p.el ? p.el : p)).filter(Boolean));
+    parts.forEach(p => { if (p && p.mount) p.mount(); });
+    return true;
+  }
+  function chartProblem(kind) {
+    if (kind === "offline") {
+      const again = h("button", { type: "button", class: "btn" }, "Try again");
+      again.addEventListener("click", () => { if (state.chart) loadChart(); });
+      return [h("div", { class: "offbar cs-msg", role: "status" }, CHART_TEXT.offline), again];
+    }
+    return [h("p", { class: "cs-msg muted", role: "status" }, CHART_TEXT.missing)];
+  }
+  function chartView(c) {
+    const hd = obj(c.header), se = obj(c.series), pf = pfData(c.pf, hd);
+    return [chartHead(hd), pf ? pfCard(pf) : null, rsiCard(se), macdCard(se), para(c.reading, "cs-read"), h("p", { class: "cs-note" }, CHART_TEXT.note)];
+  }
+
+  // header: close and change, signal / RS / RVOL chips, target, stop, reversal
+  function chartHead(hd) {
+    const sig = hd.signal === "BUY" ? ["▲", "Buy", "up"] : hd.signal === "SELL" ? ["▼", "Sell", "down"] : null;
+    const chgTone = toneOf(hd.chg);
+    const facts = [["Target", hd.target, "up"], ["Stop", hd.stop, "down"], ["Reverses at", hd.reverse_at, ""]].filter(f => isNum(f[1]));
+    const chips = [sig ? chip([`${sig[0]} P&F ${sig[1]}`, str(hd.pattern), shortDay(hd.signal_date)].filter(Boolean).join(" · "), sig[2]) : null,
+      hd.rs_column === "X" || hd.rs_column === "O" ? chip("RS in " + hd.rs_column, "acc") : null,
+      isNum(hd.rvol) && hd.rvol >= 2 ? chip("RVOL " + num(hd.rvol), "warn") : null].filter(Boolean);
+    return h("section", { class: "card cs-card" },
+      h("div", { class: "cs-price" }, h("span", { class: "big" }, px(hd.close)), isNum(hd.chg) ? chip(`${arrow(chgTone)} ${pct(hd.chg, 2)}`, chgTone) : null),
+      chips.length ? h("div", { class: "chips" }, chips) : null,
+      facts.length ? h("div", { class: "facts" }, facts.map(([k, v, t]) => h("div", null, h("small", null, k), h("b", { class: t }, px(v))))) : null);
+  }
+
+  // ---- P&F: the engine's page as graph paper, one cell per box ----
+  function pfData(raw, hd) {
+    const pf = obj(raw), levels = arr(pf.levels);
+    if (!isInt(pf.b0) || !levels.length || !levels.every(isNum)) return null;
+    const cols = arr(pf.cols).filter(c => Array.isArray(c) && (c[0] === "X" || c[0] === "O") && isInt(c[1]) && isInt(c[2]) && c[1] <= c[2] && c[2] - c[1] < PF_MAX_COL)
+      .map(c => ({ d: c[0], lo: c[1], hi: c[2], marks: obj(c[3]) }));
+    if (!cols.length) return null;
+    const b0 = pf.b0, top = b0 + levels.length - 1;
+    const stepAt = k => (levels.length > 1 ? levels[clamp(k, 1, levels.length - 1)] - levels[clamp(k, 1, levels.length - 1) - 1] : 1) || 1;
+    // the box of a price: the nearest level, or past either end at that end's box size
+    const boxOf = v => {
+      if (!isNum(v)) return null;
+      if (v < levels[0]) return b0 - Math.round((levels[0] - v) / stepAt(1));
+      if (v > levels[levels.length - 1]) return top + Math.round((v - levels[levels.length - 1]) / stepAt(levels.length - 1));
+      let best = 0;
+      levels.forEach((l, k) => { if (Math.abs(l - v) < Math.abs(levels[best] - v)) best = k; });
+      return b0 + best;
+    };
+    const level = b => (b < b0 ? levels[0] - (b0 - b) * stepAt(1) : b > top ? levels[levels.length - 1] + (b - top) * stepAt(levels.length - 1) : levels[b - b0]);
+    const lo = Math.min(...cols.map(c => c.lo)), hi = Math.max(...cols.map(c => c.hi));
+    const near = b => (b !== null && b >= lo - PF_MAX_EXTRA && b <= hi + PF_MAX_EXTRA ? b : null);
+    const tBox = near(boxOf(hd.target)), sBox = near(boxOf(hd.stop));
+    const ends = [lo, hi, tBox, sBox].filter(b => b !== null);
+    const priceBox = isInt(pf.price_box) ? pf.price_box : boxOf(hd.close);
+    return { cols, level, tBox, sBox, priceBox, close: isNum(hd.close) ? hd.close : level(priceBox), target: hd.target, stop: hd.stop,
+      rlo: Math.min(...ends) - PF_MARGIN, rhi: Math.max(...ends) + PF_MARGIN,
+      lines: arr(pf.trendlines).map(obj).filter(t => (t.kind === "bull" || t.kind === "bear") && isInt(t.anchor) && isInt(t.base) && isInt(t.end)) };
+  }
+  function pfGeom(P, cell) {
+    const ncols = P.cols.length + 1;                       // exactly one empty column right of the last
+    const rows = P.rhi - P.rlo + 1, gw = ncols * cell;
+    return { cell, ncols, rows, gw, W: PF_PAD + gw + PF_LABEL_W, H: rows * cell + 2 * PF_PAD,
+      X: i => PF_PAD + i * cell + cell / 2, Y: b => PF_PAD + (P.rhi - b) * cell + cell / 2, top: b => PF_PAD + (P.rhi - b) * cell };
+  }
+  function pfPaper(g) {
+    let d = "";
+    for (let r = 0; r <= g.rows; r++) d += `M${PF_PAD},${PF_PAD + r * g.cell}h${g.gw}`;
+    for (let c = 0; c <= g.ncols; c++) d += `M${PF_PAD + c * g.cell},${PF_PAD}v${g.rows * g.cell}`;
+    return s("path", { d, class: "paper" });
+  }
+  function pfRowTag(g, b, text, tone, dashed) {
+    const y = g.Y(b), x = PF_PAD + g.gw;
+    return [s("line", { x1: PF_PAD, x2: x, y1: y, y2: y, class: "ln-" + tone + (dashed ? " dash" : "") + " pf-row" }),
+      s("rect", { x: x + 1, y: y - 6, width: PF_LABEL_W - 1, height: 12, class: "pf-tagbg" }),
+      s("text", { x: x + 3, y: y + 3, class: "pf-tag tx-" + tone }, text)];
+  }
+  function pfTrend(P, g, t) {
+    const dir = t.kind === "bull" ? 1 : -1, last = Math.min(t.end, P.cols.length);   // stops at the one empty column
+    const pts = [];
+    for (let i = Math.max(0, t.anchor); i <= last; i++) {
+      const b = t.base + dir * (i - t.anchor);
+      if (b >= P.rlo && b <= P.rhi) pts.push(g.X(i).toFixed(1) + "," + g.Y(b).toFixed(1));
+    }
+    return pts.length > 1 ? s("path", { d: "M" + pts.join("L"), class: "pf-tl " + (dir > 0 ? "ln-up" : "ln-down") }) : null;
+  }
+  function pfCells(P, g) {
+    const r = g.cell * 0.34, out = [];
+    P.cols.forEach((c, i) => {
+      const cx = g.X(i);
+      for (let b = c.lo; b <= c.hi; b++) {
+        const cy = g.Y(b), m = c.marks[String(b)];
+        if (typeof m === "string" && m.length >= 1 && m.length <= 2) {
+          out.push(s("text", { x: cx.toFixed(1), y: (cy + g.cell * 0.3).toFixed(1), "text-anchor": "middle", "font-size": Math.max(6, g.cell * 0.78).toFixed(1), class: "pf-m" }, m));
+        } else if (c.d === "X") {
+          out.push(s("path", { d: `M${(cx - r).toFixed(1)},${(cy - r).toFixed(1)}L${(cx + r).toFixed(1)},${(cy + r).toFixed(1)}M${(cx + r).toFixed(1)},${(cy - r).toFixed(1)}L${(cx - r).toFixed(1)},${(cy + r).toFixed(1)}`, class: "pf-x" }));
+        } else {
+          out.push(s("circle", { cx: cx.toFixed(1), cy: cy.toFixed(1), r: r.toFixed(1), class: "pf-o" }));
+        }
+      }
+    });
+    return out;
+  }
+  function pfSvg(P, g, fit) {
+    const inRange = b => b !== null && b >= P.rlo && b <= P.rhi;
+    const tags = [[P.tBox, "T " + px(P.target), "up", true], [P.sBox, "S " + px(P.stop), "down", true], [P.priceBox, px(P.close), "acc", false]].filter(t => inRange(t[0]));
+    const labels = [];
+    for (let b = P.rlo; b <= P.rhi; b++) {
+      if (b % PF_LABEL_EVERY || tags.some(t => Math.abs(g.Y(t[0]) - g.Y(b)) < PF_TAG_CLEAR)) continue;
+      labels.push(s("text", { x: PF_PAD + g.gw + 3, y: (g.Y(b) + 3).toFixed(1), class: "pf-lab" }, px(P.level(b))));
+    }
+    const last = P.cols[P.cols.length - 1];
+    return s("svg", { width: g.W, height: g.H, viewBox: `0 0 ${g.W} ${g.H}`, role: "img", class: "pfsvg" + (fit ? " fit" : ""),
+      "aria-label": `Point and figure, ${P.cols.length} columns; last column ${last.d === "X" ? "rising" : "falling"}, close ${px(P.close)}` },
+      pfPaper(g), labels, P.lines.map(t => pfTrend(P, g, t)), tags.map(t => pfRowTag(g, t[0], t[1], t[2], t[3])), pfCells(P, g));
+  }
+  // the opening view: the last column at the right; 2 empty rows above an X column's top box, or below an O column's bottom box
+  function pfOpenScroll(P, g, viewW, viewH) {
+    const last = P.cols[P.cols.length - 1];
+    const want = last.d === "X" ? g.top(last.hi) - PF_OPEN_GAP * g.cell : g.top(last.lo) + (1 + PF_OPEN_GAP) * g.cell - viewH;
+    return { left: Math.max(0, g.W - viewW), top: clamp(want, 0, Math.max(0, g.H - viewH)) };
+  }
+  function pfCard(P) {
+    const zout = h("button", { type: "button", class: "zb", "aria-label": "Smaller boxes" }, "−");
+    const zfit = h("button", { type: "button", class: "zb zfit", "aria-pressed": "false" }, "Fit");
+    const zin = h("button", { type: "button", class: "zb", "aria-label": "Larger boxes" }, "+");
+    const wrap = h("div", { class: "pfwrap", tabindex: "0", "aria-label": "Point and figure chart; drag for older columns" });
+    const z = { cell: PF_START, fit: false };
+    const viewH = () => wrap.clientHeight || PF_VIEW_REM * remPx();
+    const fitCell = () => {
+      const w = (wrap.clientWidth || IND_W) - PF_LABEL_W - 2 * PF_PAD, hh = PF_VIEW_REM * remPx() - 2 * PF_PAD;
+      return Math.max(PF_FIT_MIN, Math.min(PF_MAX, w / (P.cols.length + 1), hh / (P.rhi - P.rlo + 1)));
+    };
+    const draw = keep => {
+      const fx = keep && wrap.scrollWidth ? (wrap.scrollLeft + wrap.clientWidth / 2) / wrap.scrollWidth : null;
+      const fy = keep && wrap.scrollHeight ? (wrap.scrollTop + wrap.clientHeight / 2) / wrap.scrollHeight : null;
+      const g = pfGeom(P, z.fit ? fitCell() : z.cell);
+      wrap.replaceChildren(pfSvg(P, g, z.fit));
+      wrap.setAttribute("data-cell", String(Math.round(g.cell * 100) / 100));
+      zfit.setAttribute("aria-pressed", String(z.fit));
+      zout.disabled = !z.fit && z.cell <= PF_MIN; zin.disabled = !z.fit && z.cell >= PF_MAX;
+      if (z.fit) { wrap.scrollLeft = 0; wrap.scrollTop = 0; return; }
+      if (fx !== null && fy !== null) { wrap.scrollLeft = Math.max(0, fx * g.W - (wrap.clientWidth || 0) / 2); wrap.scrollTop = Math.max(0, fy * g.H - viewH() / 2); return; }
+      const o = pfOpenScroll(P, g, wrap.clientWidth || 0, Math.min(viewH(), g.H));
+      wrap.scrollLeft = o.left; wrap.scrollTop = o.top;
+    };
+    const step = d => { z.cell = z.fit ? PF_MIN : clamp(z.cell + d, PF_MIN, PF_MAX); const was = z.fit; z.fit = false; draw(!was); };
+    zout.addEventListener("click", () => step(-PF_STEP));
+    zin.addEventListener("click", () => step(PF_STEP));
+    zfit.addEventListener("click", () => { z.fit = !z.fit; draw(false); });
+    const el = h("section", { class: "card cs-card" },
+      h("div", { class: "cs-hd" }, h("h3", null, "Point & figure"), h("div", { class: "zoom", role: "group", "aria-label": "Zoom" }, zout, zfit, zin)),
+      h("div", { class: "pfbox" }, wrap),
+      h("div", { class: "legend" }, h("span", null, h("i", { class: "k-up" }), "Support"), h("span", null, h("i", { class: "k-down" }), "Resistance"),
+        h("span", null, h("b", { class: "acc" }, "1–9 A B C"), " month")),
+      h("p", { class: "cs-hint" }, `Opens on the latest columns · drag for older ones · Fit shows all ${P.cols.length} columns`));
+    return { el, mount: () => { if (root.requestAnimationFrame) root.requestAnimationFrame(() => draw(false)); else draw(false); } };
+  }
+
+  // ---- RSI 14 and MACD 12/26/9 on the same date axis; nulls are not drawn ----
+  function indX(n) { return i => (n > 1 ? i / (n - 1) : 0.5) * (IND_W - IND_R); }
+  function monthTicks(dates, x, H) {
+    const out = [];
+    let lm = -1, lx = -Infinity;
+    dates.forEach((iso, i) => {
+      const d = parseDate(iso);
+      if (!d || d.getUTCMonth() === lm) return;
+      lm = d.getUTCMonth();
+      if (x(i) - lx < MONTH_GAP) return;
+      lx = x(i);
+      if (i > 3) out.push(s("line", { x1: x(i).toFixed(1), x2: x(i).toFixed(1), y1: 2, y2: H - 2, class: "ln-grid" }));
+      out.push(s("text", { x: (x(i) + 2).toFixed(1), y: H + 11, class: "tx-muted" }, MONTHS[lm]));
+    });
+    return out;
+  }
+  // touch or hover: a crosshair and "date · value" at the top left
+  function readout(svg, n, x, H, textAt) {
+    const xh = s("line", { x1: 0, x2: 0, y1: 2, y2: H - 2, class: "ln-ink thin xh", visibility: "hidden" });
+    const tip = s("text", { x: 4, y: 11, class: "tip", visibility: "hidden" });
+    const show = e => {
+      const r = svg.getBoundingClientRect ? svg.getBoundingClientRect() : null;
+      if (!r || !r.width || !isNum(e.clientX)) return;
+      const i = clamp(Math.round(((e.clientX - r.left) * IND_W / r.width) / (IND_W - IND_R) * (n - 1)), 0, n - 1);
+      xh.setAttribute("x1", x(i).toFixed(1)); xh.setAttribute("x2", x(i).toFixed(1)); xh.setAttribute("visibility", "visible");
+      tip.textContent = textAt(i); tip.setAttribute("visibility", "visible");
+    };
+    const hide = () => { xh.setAttribute("visibility", "hidden"); tip.setAttribute("visibility", "hidden"); };
+    svg.addEventListener("pointerdown", show); svg.addEventListener("pointermove", show);
+    svg.addEventListener("pointerleave", hide); svg.addEventListener("pointercancel", hide);
+    svg.appendChild(xh); svg.appendChild(tip);
+    return svg;
+  }
+  function indCard(title, value, svg, legend) {
+    return h("section", { class: "card cs-card" }, h("div", { class: "cs-hd" }, h("h3", null, title), h("span", { class: "v mono" }, value)), svg, legend);
+  }
+  function rsiCard(se) {
+    const rsi = arr(se.rsi), dates = arr(se.dates);
+    if (!rsi.some(isNum)) return null;
+    const n = Math.max(2, rsi.length), H = RSI_H, x = indX(n), y = v => 4 + (1 - clamp(v, 0, 100) / 100) * (H - 8);
+    const lastI = rsi.map(isNum).lastIndexOf(true);
+    const svg = s("svg", { viewBox: `0 0 ${IND_W} ${H + 14}`, width: "100%", role: "img", class: "chart ind", "aria-label": `RSI 14, latest ${num(rsi[lastI])}; 70 and 30 marked` },
+      s("rect", { x: 0, y: y(70).toFixed(1), width: IND_W - IND_R, height: (y(30) - y(70)).toFixed(1), class: "band" }),
+      [30, 50, 70].map(v => [s("line", { x1: 0, x2: IND_W - IND_R, y1: y(v).toFixed(1), y2: y(v).toFixed(1), class: v === 50 ? "ln-grid" : "ln-border" }),
+        s("text", { x: IND_W - IND_R + 4, y: (y(v) + 3).toFixed(1), class: "tx-muted" }, String(v))]),
+      monthTicks(dates, x, H), pathEl(linePath(rsi, x, y), "ln-acc thick rsi"),
+      s("circle", { cx: x(lastI).toFixed(1), cy: y(rsi[lastI]).toFixed(1), r: 2.5, class: "f-acc" }));
+    return indCard("RSI 14", num(rsi[lastI]), readout(svg, n, x, H, i => [shortDay(dates[i]), "RSI " + num(rsi[i])].filter(Boolean).join(" · ")));
+  }
+  function macdCard(se) {
+    const m = arr(se.macd), sg = arr(se.signal), hs = arr(se.hist), dates = arr(se.dates);
+    const ex = extent(m, sg, hs, [0]);
+    if (!m.some(isNum) && !sg.some(isNum) && !hs.some(isNum)) return null;
+    const n = Math.max(2, m.length, sg.length, hs.length), H = MACD_H, x = indX(n), pad = (ex[1] - ex[0]) * 0.08;
+    const lo = ex[0] - pad, hi = ex[1] + pad, y = v => 4 + (1 - (v - lo) / (hi - lo)) * (H - 8), bw = ((IND_W - IND_R) / n) * 0.7;
+    const svg = s("svg", { viewBox: `0 0 ${IND_W} ${H + 14}`, width: "100%", role: "img", class: "chart ind",
+      "aria-label": `MACD ${num(lastNum(m), 2)}, signal ${num(lastNum(sg), 2)}, histogram ${num(lastNum(hs), 2)}` },
+      monthTicks(dates, x, H),
+      s("line", { x1: 0, x2: IND_W - IND_R, y1: y(0).toFixed(1), y2: y(0).toFixed(1), class: "ln-muted thin zero" }),
+      s("text", { x: IND_W - IND_R + 4, y: (y(0) + 3).toFixed(1), class: "tx-muted" }, "0"),
+      hs.map((v, i) => (isNum(v) ? s("rect", { x: (x(i) - bw / 2).toFixed(1), y: Math.min(y(v), y(0)).toFixed(1), width: bw.toFixed(1),
+        height: Math.max(0.5, Math.abs(y(v) - y(0))).toFixed(1), class: "hb " + (v >= 0 ? "f-up" : "f-down") }) : null)),
+      pathEl(linePath(m, x, y), "ln-acc macd"), pathEl(linePath(sg, x, y), "ln-warn dash sig"));
+    return indCard("MACD 12/26/9", `${num(lastNum(m), 2)} / ${num(lastNum(sg), 2)}`,
+      readout(svg, n, x, H, i => [shortDay(dates[i]), "MACD " + num(m[i], 2), "signal " + num(sg[i], 2)].filter(Boolean).join(" · ")),
+      h("div", { class: "legend" }, h("span", null, h("i", { class: "k-acc" }), "MACD"), h("span", null, h("i", { class: "k-warn" }), "Signal"), h("span", null, "Bars: histogram")));
   }
 
   // ---------- events ----------
@@ -678,6 +1021,7 @@
     }, { passive: true });
     E.track.addEventListener("click", e => {
       if (hold.suppressClick()) { if (e.preventDefault) e.preventDefault(); return; }
+      if (openChartFrom(e)) return;
       const b = e.target && e.target.closest ? e.target.closest("[data-go]") : null;
       if (b) go(Number(b.getAttribute("data-go")) - 1);
     });
@@ -688,10 +1032,12 @@
       if (!hold.heldRecently() && !card.classList.contains("empty")) { hold.cancel(); openSheet(Number(card.getAttribute("data-i"))); }
     });
     E.sheetClose.addEventListener("click", closeSheet);
+    E.sheet.addEventListener("click", openChartFrom);
+    E.chartBack.addEventListener("click", closeChart);
     E.scrim.addEventListener("click", closeSheet);
     wireSheetDrag();
     document.addEventListener("keydown", onKey);
-    root.addEventListener("hashchange", () => { const n = cardFromHash(); if (n !== null && state.cards.length) { closeSheet(); go(n); } });
+    root.addEventListener("hashchange", () => { const n = cardFromHash(); if (n !== null && state.cards.length) { closeChart(); closeSheet(); go(n); } });
     root.addEventListener("resize", () => { E.track.scrollLeft = state.index * (E.track.clientWidth || 0); });
   }
   function wireSheetDrag() {
@@ -704,7 +1050,13 @@
     E.grab.addEventListener("pointercancel", end);
   }
   function onKey(e) {
-    const E = state.els;
+    const E = state.els, a = document.activeElement;
+    if (state.chart) { if (e.key === "Escape") closeChart(); return; }
+    if ((e.key === "Enter" || e.key === " ") && a && a.classList && a.classList.contains("link") && a.getAttribute("data-chart")) {
+      if (e.preventDefault) e.preventDefault();
+      openChart(a.getAttribute("data-chart"), a);
+      return;
+    }
     if (state.sheetIndex >= 0) {
       if (e.key === "Escape") closeSheet();
       return;
@@ -761,11 +1113,12 @@
 
   root.DSEReport = {
     ready: null,
-    createHold, go, setPeriod, openSheet, closeSheet,
-    back: closeSheet,                     // for the shell's back button: true when it closed the sheet
-    state: () => ({ period: state.period, index: state.index, count: state.cards.length, sheetOpen: state.sheetIndex >= 0, sheetIndex: state.sheetIndex }),
+    createHold, go, setPeriod, openSheet, closeSheet, openChart, closeChart,
+    back: () => closeChart() || closeSheet(),   // for the shell's back button: true when it closed the chart screen or the sheet
+    state: () => ({ period: state.period, index: state.index, count: state.cards.length, sheetOpen: state.sheetIndex >= 0, sheetIndex: state.sheetIndex,
+      chartOpen: !!state.chart, chartCode: state.chart ? state.chart.code : null }),
     format: { num, signed, pct, dayLabel, clockTime },
-    constants: { HOLD_MS, MOVE_TOL, BASE_CARDS, EMPTY_TEXT },
+    constants: { HOLD_MS, MOVE_TOL, BASE_CARDS, EMPTY_TEXT, CHART_TEXT, PF_START, PF_MIN, PF_MAX, PF_STEP },
   };
   root.DSEReport.ready = boot();
 })(typeof window !== "undefined" ? window : globalThis);

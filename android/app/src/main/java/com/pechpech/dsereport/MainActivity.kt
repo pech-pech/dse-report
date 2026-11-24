@@ -19,13 +19,15 @@ import androidx.work.WorkManager
 
 /**
  * One WebView showing the bundled card UI (assets/ui) and the saved report (files/reports), both through
- * WebViewAssetLoader on https://appassets.androidplatform.net. No file or content access, no JavaScript
+ * WebViewAssetLoader on https://appassets.androidplatform.net, plus stock charts at /charts/ (ChartStore:
+ * saved copy, else downloaded once). No file or content access, no JavaScript
  * bridge, no navigation off that origin: https links open in the browser, anything else is dropped.
  */
 class MainActivity : Activity() {
 
     private lateinit var web: WebView
     private lateinit var loader: WebViewAssetLoader
+    private lateinit var charts: ChartStore
 
     @SuppressLint("SetJavaScriptEnabled")   // the bundled UI is the only script the WebView ever runs
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,6 +39,7 @@ class MainActivity : Activity() {
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))   // /assets/ui/... -> assets/ui/...
             .addPathHandler("/data/", WebViewAssetLoader.InternalStoragePathHandler(this, reports))
             .build()
+        charts = ChartStore(reports) { url -> ReportFetcher.fetch(url, ChartStore.MAX_BYTES) }
         web = WebView(this).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true          // the remembered Day/Week/Month choice
@@ -110,6 +113,8 @@ class MainActivity : Activity() {
     private inner class Client : WebViewClientCompat() {
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
             if (request.url.host != HOST) return blocked()
+            // a stock's chart: the saved copy, else downloaded once (this runs off the main thread)
+            if (request.url.path.orEmpty().startsWith("/charts/")) return chart(request.url.path.orEmpty())
             val r = loader.shouldInterceptRequest(request.url)
             // a missing file (no report saved yet) is a plain 404, which the page handles
             return if (r == null || r.data == null) notFound() else r
@@ -121,6 +126,12 @@ class MainActivity : Activity() {
             if (url.scheme == "https" && request.hasGesture()) openOutside(url)
             return true
         }
+    }
+
+    private fun chart(path: String): WebResourceResponse = when (val r = charts.serve(path)) {
+        is ChartStore.Result.Ok -> WebResourceResponse("application/json", "utf-8", 200, "OK", emptyMap(), r.bytes.inputStream())
+        ChartStore.Result.NotFound -> notFound()
+        ChartStore.Result.Offline -> unavailable()
     }
 
     private fun openOutside(url: Uri) {
@@ -137,5 +148,7 @@ class MainActivity : Activity() {
         // any request off the app origin (the page has a strict CSP; this is the second lock)
         private fun blocked() = WebResourceResponse("text/plain", "utf-8", 403, "Blocked", emptyMap(), ByteArray(0).inputStream())
         private fun notFound() = WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), ByteArray(0).inputStream())
+        // a chart that could not be downloaded and was never saved (the page offers Try again)
+        private fun unavailable() = WebResourceResponse("text/plain", "utf-8", 503, "Service Unavailable", emptyMap(), ByteArray(0).inputStream())
     }
 }

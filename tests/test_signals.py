@@ -125,7 +125,7 @@ def test_item_shape_and_values():
     s = _stock("A", signal_date="2026-11-17", vol_ratio=2.345)
     item = S.signal_lists(_inputs([s]), "day")["buys"][0]
     assert set(item) == {"code", "sector", "close", "chg_pct", "pattern", "signal_date", "target",
-                         "stop", "rvol", "mfi", "chips", "pf_cols"}
+                         "stop", "rvol", "mfi", "chips", "state", "pf_cols"}
     assert item["chg_pct"] == 10.0 and item["close"] == 110.0 and item["rvol"] == 2.35
     assert item["pf_cols"] == [["X", 100, 110, 4]]
     assert item["target"] == 130.0 and item["stop"] == 95.0
@@ -214,3 +214,31 @@ def test_real_fixture_shape_and_sanity(real, period):
     for it in out["beating"]:
         assert real["stocks"][it["code"]]["rs_column"] == "X"
     json.dumps(out, allow_nan=False)
+
+
+def test_state_reads_column_macd_and_rsi():
+    s = _stock("AAA", column="X", macd=[0.2] * (N - 1) + [0.4], macd_hist=[0.1] * (N - 1) + [0.3],
+               rsi=[55.0] * (N - 1) + [72.0])
+    assert S.state(s) == {"column": "X", "macd": "above", "macd_dir": "rising", "rsi": 72.0,
+                          "rsi_band": ">70", "rsi_dir": "rising"}
+
+
+def test_state_falling_below_and_bands():
+    s = _stock("AAA", column="O", macd=[-0.5] * N, macd_hist=[0.3] * (N - 1) + [0.1], rsi=[40.0] * (N - 1) + [28.0])
+    st = S.state(s)
+    assert (st["macd"], st["macd_dir"], st["rsi_band"], st["rsi_dir"]) == ("below", "falling", "<30", "falling")
+    assert S._rsi_band(50.0) == ">50" and S._rsi_band(49.9) == "<50" and S._rsi_band(70.0) == ">50"
+    assert S._direction([1.0, 1.0]) == "flat"
+
+
+def test_state_with_missing_data_is_all_none():
+    s = _stock("AAA", column=None, macd=[], macd_hist=[None], rsi=[None, None])
+    assert S.state(s) == {"column": None, "macd": None, "macd_dir": None, "rsi": None, "rsi_band": None,
+                          "rsi_dir": None}
+
+
+def test_signal_items_carry_state():
+    I = json.loads(FIXTURE.read_text())
+    out = S.signal_lists(I, "week")
+    items = [it for k in S.LISTS for it in out[k]]
+    assert items and all(set(it["state"]) == {"column", "macd", "macd_dir", "rsi", "rsi_band", "rsi_dir"} for it in items)

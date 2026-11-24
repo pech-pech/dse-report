@@ -9,6 +9,8 @@ const assert = require("assert");
 const UI = path.join(__dirname, "..", "app", "src", "main", "assets", "ui");
 const APP_JS = fs.readFileSync(path.join(UI, "app.js"), "utf8");
 const FIXTURE = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "latest.json"), "utf8"));
+// One stock's chart file (CHART-CONTRACT "Data"): WATACHEM as of the fixture's day, last column an X.
+const CHART = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "chart-WATACHEM.json"), "utf8"));
 // New-shape write-ups (docs/WHY-CONTRACT.md) laid over the fixture: setups[i].view and periods[p].views, by index.
 const VIEWS = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "views.json"), "utf8"));
 const MARKET_KEYS = ["summary", "trend", "flow", "sectors", "signals"];
@@ -78,6 +80,7 @@ function makeDom() {
     querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
     focus() { doc.activeElement = this; }
     scrollTo(o) { if (o && typeof o === "object" && typeof o.left === "number") this.scrollLeft = o.left; }
+    getBoundingClientRect() { return { left: 0, top: 0, width: 320, height: 120 }; }
     setPointerCapture() {}
   }
   function matchOne(el, sel) {
@@ -113,10 +116,11 @@ function makeDom() {
 function response(status, data) {
   return { ok: status >= 200 && status < 300, status, json: async () => (typeof data === "function" ? data() : data) };
 }
-async function runApp({ report, meta, hash = "", store = {}, fetchThrows = false, badJson = false }) {
+async function runApp({ report, meta, hash = "", store = {}, fetchThrows = false, badJson = false, charts = null }) {
   const { doc, walk } = makeDom();
   const listeners = {};
   const vibrations = [];
+  const fetched = [];
   const sandbox = {
     document: doc, console, setTimeout, clearTimeout, Promise, Date, Math, JSON,
     location: { hash },
@@ -129,6 +133,7 @@ async function runApp({ report, meta, hash = "", store = {}, fetchThrows = false
       if (fetchThrows) throw new TypeError("Failed to fetch");
       if (url === "/data/latest.json") return report === undefined ? response(404) : response(200, badJson ? () => { throw new SyntaxError("bad json"); } : JSON.parse(JSON.stringify(report)));
       if (url === "/data/meta.json") return meta === undefined ? response(404) : response(200, meta);
+      if (charts && url.startsWith("/charts/")) { fetched.push(url); return charts(url); }
       return response(404);
     },
   };
@@ -139,7 +144,7 @@ async function runApp({ report, meta, hash = "", store = {}, fetchThrows = false
   const fire = (type, ev) => (listeners[type] || []).forEach(f => f(ev));
   const track = doc.body.querySelector("main");
   const sheet = doc.body.querySelector("[role]") && doc.body.querySelectorAll("div").find(d => d.getAttribute("role") === "dialog");
-  return { ok, doc, walk, api: sandbox.DSEReport, track, sheet, fire, store, vibrations, sandbox };
+  return { ok, doc, walk, api: sandbox.DSEReport, track, sheet, fire, store, vibrations, sandbox, fetched };
 }
 
 // ---------- checks ----------
@@ -520,6 +525,295 @@ function mutated() {
     }
     const r = await runApp({ report: { ...FIXTURE, schema: 2 } });
     assert.ok(r.doc.body.textContent.includes("newer version of the app"));
+  });
+
+
+  // ---------- chart screen ----------
+  const CODES = ["WATACHEM", "MEGHNAPET", "AAMRANET"];
+  const withCharts = (base, codes = CODES) => Object.assign(JSON.parse(JSON.stringify(base)), { charts: { path: `charts/${base.asOf}/`, codes } });
+  const copy = o => JSON.parse(JSON.stringify(o));
+  const serveChart = (chart = CHART) => url => (url === `/charts/${FIXTURE.asOf}/${chart.code}.json` ? response(200, copy(chart)) : response(404));
+  const screen = r => r.doc.body.querySelector(".chartscreen");
+  const tick = () => new Promise(res => setImmediate(res));
+  const press = (el, type, extra) => el.dispatchEvent(Object.assign({ type, target: el, preventDefault() {} }, extra || {}));
+  const PAD = 2;                       // app.js PF_PAD
+  const boxCount = (cols, d) => cols.filter(c => c[0] === d).reduce((n, c) => n + (c[2] - c[1] + 1) - Object.keys(c[3]).length, 0);
+  const nonNull = a => a.filter(v => typeof v === "number").length;
+  const points = d => (d.match(/[ML]/g) || []).length;
+  // the grid's box range as the contract plans it: all columns plus the target and stop rows, 2 boxes either side
+  function rowsOf(chart) {
+    const cols = chart.pf.cols, box = v => Math.round(v / 2);             // the fixture's levels are a 2-taka grid
+    const ends = [Math.min(...cols.map(c => c[1])), Math.max(...cols.map(c => c[2]))].concat([chart.header.target, chart.header.stop].filter(v => typeof v === "number").map(box));
+    return { rlo: Math.min(...ends) - 2, rhi: Math.max(...ends) + 2 };
+  }
+
+  await test("chart links: only listed codes become links, on cards and in the sheet; old reports have none", async () => {
+    const r = await runApp({ report: withCharts(FIXTURE) });
+    const codes = r.doc.body.querySelectorAll(".code");
+    assert.ok(codes.length > 5);
+    let links = 0;
+    codes.forEach(c => {
+      const listed = CODES.includes(c.textContent), link = c.classList.contains("link");
+      assert.strictEqual(link, listed, `${c.textContent}: link only when listed`);
+      if (link) {
+        links++;
+        assert.strictEqual(c.getAttribute("role"), "button"); assert.strictEqual(c.getAttribute("tabindex"), "0");
+        assert.strictEqual(c.getAttribute("aria-label"), `Open charts for ${c.textContent}`);
+      }
+    });
+    assert.ok(links >= 2, "some links on the cards");
+    const meg = FIXTURE.setups.findIndex(s => s.code === "MEGHNAPET");
+    const h2code = r.track.children[5 + meg].querySelector("h2").querySelector(".code");
+    assert.ok(h2code && h2code.classList.contains("link"), "a setup's title code links");
+    assert.ok(r.track.children[5 + meg].querySelector("h2").textContent.startsWith("MEGHNAPET: one box"), "title text unchanged");
+    r.api.openSheet(5 + meg);
+    assert.ok(r.sheet.querySelectorAll(".link").some(c => c.textContent === "MEGHNAPET"), "sheet title code links");
+    r.api.openSheet(4);
+    assert.ok(nSheet(r).querySelectorAll(".link").some(c => c.textContent === "WATACHEM"), "signals sheet links");
+    for (const report of [FIXTURE, withCharts(FIXTURE, []), Object.assign(copy(FIXTURE), { charts: { codes: "WATACHEM" } }), Object.assign(copy(FIXTURE), { charts: null })]) {
+      const r0 = await runApp({ report });
+      assert.strictEqual(r0.doc.body.querySelectorAll(".link").length, 0, "no charts key: no links");
+      r0.api.openSheet(4);
+      assert.strictEqual(r0.sheet.querySelectorAll(".link").length, 0, "no links in the sheet either");
+      assert.strictEqual(await r0.api.openChart("WATACHEM"), false, "no chart for an unlisted code");
+      assert.strictEqual(screen(r0).hidden, true);
+    }
+  });
+
+  await test("chart: a tap on a linked code opens the screen; a hold still opens the sheet", async () => {
+    const r = await runApp({ report: withCharts(FIXTURE), charts: serveChart() });
+    const link = r.track.querySelectorAll(".link").find(c => c.textContent === "WATACHEM");
+    press(link, "pointerdown", { clientX: 10, clientY: 10, pointerType: "touch", button: 0 });
+    await new Promise(res => setTimeout(res, 520));
+    assert.strictEqual(r.api.state().sheetOpen, true, "hold opens the sheet");
+    r.fire("pointerup", {}); press(link, "click");
+    assert.strictEqual(r.api.state().chartOpen, false, "the click after a hold does not open the chart");
+    r.api.closeSheet();
+    press(link, "pointerdown", { clientX: 10, clientY: 10, pointerType: "touch", button: 0 }); r.fire("pointerup", {}); press(link, "click");
+    assert.strictEqual(r.api.state().chartOpen, true, "tap opens the chart");
+    assert.strictEqual(r.api.state().sheetOpen, false);
+    assert.strictEqual(r.api.state().chartCode, "WATACHEM");
+    assert.deepStrictEqual(r.fetched, ["/charts/2026-11-17/WATACHEM.json"]);
+    assert.strictEqual(screen(r).hidden, false);
+    assert.strictEqual(r.doc.activeElement.getAttribute("aria-label"), "Back to the report", "focus on ←");
+    await tick(); await tick();
+    assert.ok(screen(r).querySelector(".pfsvg"), "drawn after load");
+    screen(r).querySelector(".cs-back").dispatchEvent({ type: "click" });
+    assert.strictEqual(r.api.state().chartOpen, false, "← closes");
+    assert.strictEqual(r.doc.activeElement, link, "focus back on the code");
+    r.doc.activeElement = link; r.doc.dispatch({ type: "keydown", key: "Enter", preventDefault() {} });
+    assert.strictEqual(r.api.state().chartOpen, true, "Enter on a link opens");
+    r.doc.dispatch({ type: "keydown", key: "Escape" });
+    assert.strictEqual(r.api.state().chartOpen, false, "Escape closes");
+  });
+
+  await test("chart screen: header, P&F cells, month marks, trend lines, levels, RSI and MACD from the file", async () => {
+    const r = await runApp({ report: withCharts(FIXTURE), charts: serveChart() });
+    assert.strictEqual(await r.api.openChart("WATACHEM"), true);
+    const sc = screen(r), text = sc.textContent, hd = CHART.header;
+    assertClean(allText(sc, r.walk), "chart screen");
+    assert.strictEqual(sc.querySelector("#chartCode").textContent, "WATACHEM");
+    assert.ok(text.includes("Pharma & Chemicals") && text.includes("As of Tue 17 Nov"));
+    assert.ok(text.includes(r.api.format.num(hd.close, 1)) && text.includes("▲ +10.00%"));
+    for (const want of ["▲ P&F Buy · Double Top · 17 Nov", "RS in X", "RVOL 21.0", "Target276.0", "Stop112.0", "Reverses at156.0",
+      "Point & figure", "RSI 14", "MACD 12/26/9", CHART.reading, "Technical readings from the report's data, not advice. Saved with this report, so it opens offline."]) {
+      assert.ok(text.includes(want), `shows "${want}"`);
+    }
+    assert.ok(!/box size|reversal/i.test(allText(sc, r.walk)), "no box size or reversal text");
+    const svg = sc.querySelector(".pfsvg"), cols = CHART.pf.cols;
+    assert.strictEqual(svg.querySelectorAll(".pf-x").length, boxCount(cols, "X"), "one X per box");
+    assert.strictEqual(svg.querySelectorAll(".pf-o").length, boxCount(cols, "O"), "one O per box");
+    const marks = cols.flatMap(c => Object.values(c[3]));
+    assert.deepStrictEqual(svg.querySelectorAll(".pf-m").map(t => t.textContent), marks, "month marks in place of their boxes");
+    // the grid: one empty column right of the last, rows from the plan
+    const { rlo, rhi } = rowsOf(CHART), cell = 18, ncols = cols.length + 1;
+    assert.strictEqual(Number(svg.getAttribute("height")), (rhi - rlo + 1) * cell + 2 * PAD, "rows: columns, target and stop, 2 boxes either side");
+    assert.strictEqual(Number(svg.getAttribute("width")), PAD + ncols * cell + 44, "one empty column, then the price labels");
+    const tl = svg.querySelectorAll(".pf-tl");
+    assert.strictEqual(tl.length, CHART.pf.trendlines.length, "both trend lines");
+    const bull = tl.find(p => p.classList.contains("ln-up")), bear = tl.find(p => p.classList.contains("ln-down"));
+    const t0 = CHART.pf.trendlines[0], lastX = Number(bull.getAttribute("d").split("L").pop().split(",")[0]);
+    assert.ok(t0.end > cols.length, "fixture's bull line runs past the columns");
+    assert.strictEqual(lastX, PAD + cols.length * cell + cell / 2, "bull line stops at the one empty column");
+    assert.strictEqual(Number(bull.getAttribute("d").slice(1).split(",")[1].split("L")[0]), PAD + (rhi - t0.base) * cell + cell / 2, "bull line starts at its base box");
+    assert.strictEqual(points(bull.getAttribute("d")), cols.length - t0.anchor + 1, "45°: one box per column");
+    assert.ok(bear && points(bear.getAttribute("d")) === CHART.pf.trendlines[1].end - CHART.pf.trendlines[1].anchor + 1);
+    const tags = svg.querySelectorAll(".pf-tag").map(t => t.textContent);
+    assert.deepStrictEqual(tags, ["T 276.0", "S 112.0", r.api.format.num(hd.close, 1)], "target, stop and last price rows");
+    assert.ok(svg.querySelectorAll(".pf-row").some(l => l.classList.contains("ln-up") && l.classList.contains("dash")), "dashed target");
+    assert.ok(svg.querySelectorAll(".pf-row").some(l => l.classList.contains("ln-acc") && !l.classList.contains("dash")), "last price row in accent");
+    assert.ok(svg.querySelectorAll(".pf-lab").length >= 5, "price labels every 5 boxes");
+    const rsi = sc.querySelector("path.rsi"), macd = sc.querySelector("path.macd"), sig = sc.querySelector("path.sig");
+    assert.strictEqual(points(rsi.getAttribute("d")), nonNull(CHART.series.rsi), "RSI: the non-null points only");
+    assert.strictEqual(points(macd.getAttribute("d")), nonNull(CHART.series.macd), "MACD line: non-null points");
+    assert.strictEqual(points(sig.getAttribute("d")), nonNull(CHART.series.signal), "signal: non-null points");
+    assert.strictEqual(sc.querySelectorAll("rect.hb").length, nonNull(CHART.series.hist), "a bar per histogram value");
+    assert.ok(sc.querySelector("line.zero"), "MACD zero line");
+    assert.ok(sc.querySelectorAll("rect.band").length === 1, "RSI 70/30 band");
+    const months = sc.querySelectorAll("svg.ind")[0].querySelectorAll("text").map(t => t.textContent);
+    assert.ok(["Aug", "Sep", "Oct", "Nov"].every(m => months.includes(m)), "month labels on the date axis");
+    const rs = sc.querySelectorAll("svg.ind")[0];
+    rs.dispatchEvent({ type: "pointermove", clientX: 288 });
+    assert.ok(/^17 Nov · RSI \d+\.\d$/.test(rs.querySelector(".tip").textContent), "touch reads the date and value: " + rs.querySelector(".tip").textContent);
+    rs.dispatchEvent({ type: "pointermove", clientX: 0 });
+    assert.strictEqual(rs.querySelector(".tip").textContent, "3 Jun · RSI –", "a null shows a dash");
+    assertClean(allText(sc, r.walk), "chart screen after touch");
+  });
+
+  await test("P&F zoom: − / + step 4 px between 12 and 28; Fit toggles the whole chart", async () => {
+    const r = await runApp({ report: withCharts(FIXTURE), charts: serveChart() });
+    await r.api.openChart("WATACHEM");
+    const sc = screen(r), wrap = sc.querySelector(".pfwrap"), [zout, zfit, zin] = sc.querySelector(".zoom").children;
+    const cell = () => Number(wrap.getAttribute("data-cell")), w = () => Number(wrap.querySelector("svg").getAttribute("width"));
+    assert.strictEqual(cell(), 18, "opens at 18 px");
+    assert.strictEqual(zfit.getAttribute("aria-pressed"), "false");
+    zout.dispatchEvent({ type: "click" }); assert.strictEqual(cell(), 14);
+    zout.dispatchEvent({ type: "click" }); assert.strictEqual(cell(), 12); assert.strictEqual(zout.disabled, true, "− off at 12");
+    zout.dispatchEvent({ type: "click" }); assert.strictEqual(cell(), 12);
+    for (let k = 0; k < 6; k++) zin.dispatchEvent({ type: "click" });
+    assert.strictEqual(cell(), 28); assert.strictEqual(zin.disabled, true, "+ off at 28");
+    const big = w();
+    zfit.dispatchEvent({ type: "click" });
+    assert.strictEqual(zfit.getAttribute("aria-pressed"), "true", "Fit pressed");
+    assert.ok(cell() < 12 && w() <= 360 && w() < big, "Fit: the whole chart in the width");
+    assert.ok(wrap.querySelector("svg").classList.contains("fit"));
+    zfit.dispatchEvent({ type: "click" });
+    assert.strictEqual(zfit.getAttribute("aria-pressed"), "false"); assert.strictEqual(cell(), 28, "Fit again: back to the box size");
+    zfit.dispatchEvent({ type: "click" }); zin.dispatchEvent({ type: "click" });
+    assert.strictEqual(zfit.getAttribute("aria-pressed"), "false", "+ leaves Fit"); assert.strictEqual(cell(), 12);
+    assertClean(allText(sc, r.walk), "zoomed");
+  });
+
+  await test("P&F opening view: last column at the right; 2 empty rows above an X top or below an O bottom", async () => {
+    const VIEW = 22.5 * 16;
+    const check = async (chart, label) => {
+      const r = await runApp({ report: withCharts(FIXTURE), charts: serveChart(chart) });
+      await r.api.openChart("WATACHEM");
+      const wrap = screen(r).querySelector(".pfwrap"), svg = wrap.querySelector("svg");
+      const H = Number(svg.getAttribute("height")), W = Number(svg.getAttribute("width")), cell = 18, view = Math.min(VIEW, H);
+      const last = chart.pf.cols[chart.pf.cols.length - 1], { rhi } = rowsOf(chart);
+      const want = last[0] === "X" ? PAD + (rhi - last[2] - 2) * cell : PAD + (rhi - last[1] + 3) * cell - view;
+      const clamped = Math.max(0, Math.min(H - view, want));
+      assert.strictEqual(wrap.scrollTop, clamped, `${label}: scrollTop`);
+      assert.strictEqual(wrap.scrollLeft, Math.max(0, W - 360), `${label}: scrolled to the last column`);
+      return { want, clamped, scrollTop: wrap.scrollTop, bottom: H - view };
+    };
+    const x = await check(CHART, "X last");
+    assert.strictEqual(x.scrollTop, x.want, "X last: not clamped, exactly 2 rows above the top box");
+    const o = copy(CHART), lastX = o.pf.cols[o.pf.cols.length - 1];
+    o.pf.cols.push(["O", lastX[2] - 6, lastX[2] - 1, {}, "2026-11-13", "2026-11-17"]); o.pf.price_box = lastX[2] - 6;
+    const oo = await check(o, "O last");
+    assert.strictEqual(oo.scrollTop, oo.want, "O last: not clamped, exactly 2 rows below the bottom box");
+    const small = copy(CHART); small.header.target = null; small.header.stop = null;
+    small.pf = { levels: Array.from({ length: 30 }, (_, k) => 2 * k), b0: 0, cols: [["X", 10, 14, {}, null, null], ["O", 11, 13, {}, null, null]], trendlines: [], price_box: 11 };
+    const sm = await check(small, "small O chart");
+    assert.ok(sm.want < 0 && sm.scrollTop === 0, "a chart shorter than the view: clamped at its top edge");
+  });
+
+  await test("Android back closes the chart screen first, then the sheet", async () => {
+    const r = await runApp({ report: withCharts(FIXTURE), charts: serveChart() });
+    r.api.openSheet(4);
+    const link = nSheet(r).querySelectorAll(".link").find(c => c.textContent === "WATACHEM");
+    press(link, "click");
+    assert.strictEqual(r.api.state().chartOpen, true, "a code in the sheet opens the chart");
+    assert.strictEqual(r.api.state().sheetOpen, true, "the sheet stays under it");
+    await tick(); await tick();
+    assert.strictEqual(r.api.back(), true); assert.strictEqual(r.api.state().chartOpen, false); assert.strictEqual(r.api.state().sheetOpen, true);
+    assert.strictEqual(r.api.back(), true); assert.strictEqual(r.api.state().sheetOpen, false);
+    assert.strictEqual(r.api.back(), false);
+    assert.strictEqual(r.api.state().index, 0, "card kept");
+  });
+
+  await test("chart states: offline (503 or no network) with Try again, 404 and invalid files", async () => {
+    let mode = "503";
+    const r = await runApp({ report: withCharts(FIXTURE), charts: url => {
+      if (mode === "throw") throw new TypeError("Failed to fetch");
+      return mode === "503" ? response(503) : serveChart()(url);
+    } });
+    const pending = r.api.openChart("WATACHEM");
+    assert.ok(screen(r).querySelector(".skel"), "loading skeleton");
+    await pending;
+    let sc = screen(r);
+    assert.ok(sc.textContent.includes("No connection. This chart hasn't been saved yet; it's saved the first time you open it online."));
+    const again = sc.querySelectorAll("button").find(b => b.textContent === "Try again");
+    assert.ok(again && !sc.querySelector(".pfsvg"));
+    assertClean(allText(sc, r.walk), "503");
+    mode = "ok"; again.dispatchEvent({ type: "click" }); await tick(); await tick();
+    assert.ok(screen(r).querySelector(".pfsvg"), "Try again loads it");
+    r.api.closeChart();
+    mode = "throw"; await r.api.openChart("WATACHEM");
+    assert.ok(screen(r).textContent.includes("No connection."), "a network error is offline too");
+    r.api.closeChart();
+    const bad = [response(404), response(500), response(200, () => { throw new SyntaxError("x"); }), response(200, Object.assign(copy(CHART), { schema: 2 })),
+      response(200, Object.assign(copy(CHART), { code: "MEGHNAPET" })), response(200, Object.assign(copy(CHART), { asOf: "2026-11-16" })), response(200, [1, 2])];
+    for (const res of bad) {
+      const r2 = await runApp({ report: withCharts(FIXTURE), charts: () => res });
+      await r2.api.openChart("WATACHEM");
+      const t = screen(r2).textContent;
+      assert.ok(t.includes("This chart isn't available for this report."), "missing text");
+      assert.ok(!t.includes("Try again"));
+      assertClean(allText(screen(r2), r2.walk), "404");
+    }
+    const r3 = await runApp({ report: Object.assign(withCharts(FIXTURE, ["bad/code"]), {}), charts: serveChart() });
+    assert.strictEqual(r3.doc.body.querySelectorAll(".link").length, 0, "codes outside the pattern never link");
+  });
+
+  await test("signal rows carry the state line: price, column, MACD vs 0 and RSI band with arrows", async () => {
+    const report = JSON.parse(JSON.stringify(FIXTURE));
+    const lists = report.periods.day.signals;
+    const k = ["buys", "sells", "beating", "volume"].find(n => (lists[n] || []).length);
+    assert.ok(k, "fixture has a signal row");
+    lists[k][0].state = { column: "X", macd: "above", macd_dir: "rising", rsi: 72.4, rsi_band: ">70", rsi_dir: "falling" };
+    if (lists[k][1]) lists[k][1].state = { column: null, macd: null, macd_dir: null, rsi: null, rsi_band: "junk", rsi_dir: null };
+    const r = await runApp({ report, meta: { savedAt: "2026-11-18T15:48:00+06:00", offline: false, error: null }, store: { "dser-period": "day" } });
+    r.api.openSheet(4);
+    const text = allText(r.sheet, r.walk);
+    assert.ok(/Col X · MACD above 0\u00a0↑ · RSI\u00a0>70\u00a0↓/.test(text), "state line in the signals sheet");
+    assert.ok(/Tk [\d,.]+ · Col X/.test(text), "price leads the line");
+    assertClean(text, "signals sheet with state");
+    const n = r.sheet.querySelectorAll(".state").length;
+    assert.strictEqual(n, 1, "a row without readings gets no bare price line");
+    const old = await runApp({ report: FIXTURE, meta: { savedAt: "2026-11-18T15:48:00+06:00", offline: false, error: null }, store: { "dser-period": "day" } });
+    old.api.openSheet(4);
+    assert.strictEqual(old.sheet.querySelectorAll(".state").length, 0, "an older report shows no state lines");
+  });
+  await test("a chart without pf shows the other sections; nulls and junk render clean", async () => {
+    const noPf = Object.assign(copy(CHART), { pf: null });
+    let r = await runApp({ report: withCharts(FIXTURE), charts: serveChart(noPf) });
+    await r.api.openChart("WATACHEM");
+    let sc = screen(r);
+    assert.ok(!sc.querySelector(".pfsvg") && !sc.textContent.includes("Point & figure"), "no P&F card");
+    assert.ok(sc.querySelector("path.rsi") && sc.querySelector("path.macd") && sc.textContent.includes(CHART.reading));
+    assertClean(allText(sc, r.walk), "no pf");
+    const junk = copy(CHART);
+    junk.header = { close: null, chg: null, signal: "HOLD", pattern: null, signal_date: null, target: null, stop: "x", reverse_at: null, rs_column: null, rvol: 1.2 };
+    junk.sector = null; junk.reading = null;
+    junk.pf.cols.splice(3, 0, ["Z", 1, 2, {}, null, null], ["X", 9, 3, null, null, null], null, "x");
+    junk.pf.cols[0][3] = { "50": "TOOLONG", "x": "1" };
+    junk.pf.trendlines.push({ kind: "up" }, null, { kind: "bull", anchor: "a" });
+    junk.series = { dates: null, close: [], rsi: [null, null, 50, null], macd: [null], signal: "x", hist: [null, 0.5, -0.2] };
+    r = await runApp({ report: withCharts(FIXTURE), charts: serveChart(junk) });
+    await r.api.openChart("WATACHEM");
+    sc = screen(r);
+    assertClean(allText(sc, r.walk), "junk chart");
+    assert.ok(sc.querySelector(".pfsvg"), "valid columns still drawn");
+    assert.strictEqual(sc.querySelectorAll(".pf-tl").length, 2, "malformed trend lines dropped");
+    assert.ok(!sc.textContent.includes("RVOL") && !sc.textContent.includes("P&F Buy"), "no chips for missing facts");
+    const empty = Object.assign(copy(CHART), { pf: { levels: [], b0: 0, cols: [] }, series: {}, header: null });
+    r = await runApp({ report: withCharts(FIXTURE), charts: serveChart(empty) });
+    await r.api.openChart("WATACHEM");
+    assertClean(allText(screen(r), r.walk), "empty chart");
+    assert.ok(screen(r).textContent.includes("not advice"));
+  });
+
+  await test("a slow chart never lands after it was closed or another opened", async () => {
+    let release;
+    const gate = new Promise(res => { release = res; });
+    const r = await runApp({ report: withCharts(FIXTURE), charts: async url => { if (url.includes("WATACHEM")) await gate; return serveChart()(url); } });
+    const first = r.api.openChart("WATACHEM");
+    r.api.closeChart();
+    release(); assert.strictEqual(await first, false);
+    assert.strictEqual(screen(r).hidden, true); assert.strictEqual(screen(r).querySelector(".pfsvg"), null);
   });
 
   await test("index.html: CSP, local files only, no inline script or style", async () => {
