@@ -7,8 +7,13 @@ on:
   schedule:
     # GitHub runs schedules late (8 h on 2026-11-18), so a launchd job on the owner's Mac starts the run at 15:00
     # and 16:55 Dhaka (scripts/mac-trigger.sh); these two stay as the fallback. --if-newer makes repeats no-ops.
-    - cron: "10 9 * * 0-4"    # 15:10 Dhaka, Sun-Thu
-    - cron: "0 10 * * 0-4"    # 16:00 Dhaka
+    # Off the busy :00/:10 minutes (GitHub delays those most), and several tries so one late or dropped run is not
+    # the only fallback; repeats publish nothing new (--if-newer).
+    - cron: "17 9 * * 0-4"    # 15:17 Dhaka, Sun-Thu
+    - cron: "43 9 * * 0-4"    # 15:43
+    - cron: "23 10 * * 0-4"   # 16:23
+    - cron: "47 11 * * 0-4"   # 17:47
+    - cron: "37 12 * * 0-4"   # 18:37
   workflow_dispatch:
     inputs:
       dry_run:
